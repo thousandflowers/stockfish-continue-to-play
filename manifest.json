@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "Stockfish Continue to Play",
+  "version": "2.0",
+  "description": "Continua la partita con Stockfish dopo la fine: timeout, disconnessione o abbandono.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "*://*.chess.com/*",
+    "*://*.lichess.org/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.chess.com/game/*",
+        "*://*.chess.com/play/*"
+      ],
+      "js": [
+        "content_chesscom.js"
+      ],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "*://*.lichess.org/*"
+      ],
+      "js": [
+        "content_lichess.js"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "stockfish.js"
+      ],
+      "matches": [
+        "*://*.chess.com/*",
+        "*://*.lichess.org/*"
+      ]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
+}
