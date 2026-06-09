@@ -38,7 +38,7 @@ function clickThroughEditorUI(level, color) {
 
   const step1 = () => {
     if (findAndClick('a[href*="/setup/ai"]')) return step2();
-    const keywords = ['computer', 'macchina', 'machine', 'stockfish', 'engine'];
+    const keywords = ['computer', 'stockfish', 'engine'];
     for (const kw of keywords) {
       if (findAndClick('a, button', kw)) return step2();
     }
@@ -134,7 +134,7 @@ function injectButton() {
 
   const btn = document.createElement('button');
   btn.id = 'sfctplay-btn';
-  btn.innerHTML = '🔗 Continua su Lichess (vs Computer)';
+  btn.innerHTML = '🔗 Continue vs Computer';
   btn.style.cssText = `
     display:block;width:100%;margin-top:10px;padding:12px;
     background:#759900;color:#fff;border:none;border-radius:5px;

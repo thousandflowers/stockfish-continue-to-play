@@ -206,7 +206,7 @@ function openLichessAnalysis() {
   const fen = getFEN();
 
   if (!fen) {
-    showBanner('Posizione non trovata. Prova a ripetere.', '#c0392b');
+    showBanner('Position not found. Try again.', '#c0392b');
     return;
   }
 
@@ -219,7 +219,7 @@ function openLichessAnalysis() {
   }, () => {
     const url = `https://lichess.org/editor/${encodeURIComponent(fen)}?color=${color}`;
     window.open(url, '_blank');
-    showBanner(`Lichess aperto — avvio partita automatico (Livello ${lvl}, ~${elo} Elo)`, '#3d85c8');
+    showBanner(`Lichess opened — game starting automatically (Level ${lvl}, ~${elo} Elo)`, '#3d85c8');
     log(`Stored sfct data: level=${lvl}`);
   });
 }
@@ -247,7 +247,7 @@ function showBanner(html, borderColor = '#769656') {
     boxShadow: '0 8px 32px rgba(0,0,0,.7)',
     cursor: 'pointer', animation: '_sfctin .28s ease',
   });
-  el.innerHTML = `♟ <span style="color:#a4cb8f">${html}</span> <small style="opacity:.5;font-size:11px">(clicca per chiudere)</small>`;
+  el.innerHTML = `♟ <span style="color:#a4cb8f">${html}</span> <small style="opacity:.5;font-size:11px">(click to close)</small>`;
   el.onclick = () => el.remove();
   document.body.appendChild(el);
   setTimeout(() => el.parentNode && el.remove(), 15000);
@@ -279,7 +279,7 @@ function injectButtons() {
     if (container) break;
   }
 
-  const btn = makeButton('🔗 Continua su Lichess', '#2b2d42', () => openLichessAnalysis());
+  const btn = makeButton('🔗 Continue on Lichess', '#2b2d42', () => openLichessAnalysis());
   (container || document.body).appendChild(btn);
 
   buttonInjected = true;

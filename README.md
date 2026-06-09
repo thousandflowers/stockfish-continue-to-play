@@ -1,6 +1,6 @@
 # ♟️ Stockfish Continue to Play
 
-**Browser extension per Chess.com e Lichess — dopo che l'avversario abbandona, continua la partita contro Stockfish.**
+**Browser extension for Chess.com & Lichess — after your opponent resigns, disconnects, or times out, continue the game vs Stockfish.**
 
 [![Chrome Web Store](https://img.shields.io/badge/Chrome-Extension-4285F4?logo=googlechrome&logoColor=white)]()
 [![Manifest](https://img.shields.io/badge/MV3-Chrome-brightgreen)]()
@@ -8,40 +8,40 @@
 
 ---
 
-## Il problema
+## The Problem
 
-Stai vincendo. L'avversario abbandona. Partita finita — ma tu volevi giocarla fino in fondo.
+You're winning. Your opponent resigns. Game over — but you wanted to play it through.
 
-Questa estensione intercetta la fine della partita su Chess.com o Lichess, estrae la posizione finale (FEN) e la carica su Lichess contro Stockfish — con difficoltà automaticamente adattata all'Elo del tuo avversario. **Niente setup. Un click.**
-
----
-
-## Demo
-
-```
-Chess.com: Game Over → [🔗 Continua su Lichess] → click
-       ↓
-Lichess: /editor con la tua posizione → Stockfish (livello adattivo)
-       ↓
-Gioca!
-```
+This extension intercepts the game-over screen on Chess.com or Lichess, extracts the final board position (FEN), and loads it on Lichess against Stockfish — with difficulty automatically matched to your opponent's Elo. **No setup. One click.**
 
 ---
 
-## Caratteristiche
+## Flow
 
-- **Supporto Chess.com + Lichess** — cattura la posizione finale su entrambi i siti
-- **Difficoltà adattiva** — Stockfish si imposta automaticamente sul livello del tuo avversario (da 1320 a 3190 Elo)
-- **Niente backend** — Stockfish gira in WASM nel browser, 0 server, 0 KB inviati
-- **Zero configurazione** — installa e gioca
-- **On/Off toggle** — popup per disattivare quando non serve
-- **Open source** — niente tracking, niente telemetria
+```
+Chess.com: Game Over → [🔗 Continue on Lichess] → click
+       ↓
+Lichess: /editor with your position → Stockfish (adaptive level)
+       ↓
+Play!
+```
 
-### Adattamento Elo
+---
 
-| Elo avversario | Livello | Skill Level |
+## Features
+
+- **Chess.com + Lichess support** — captures final position on both platforms
+- **Adaptive difficulty** — Stockfish auto-calibrates to opponent Elo (1320–3190)
+- **No backend** — Stockfish runs in WASM inside the browser. 0 servers, 0 KB sent
+- **Zero configuration** — install and play
+- **On/Off toggle** — popup to disable when not needed
+- **Open source** — no tracking, no telemetry
+
+### Elo Adaptation
+
+| Opponent Elo | Level | Skill Level |
 |:---:|:---:|:---:|
-| &lt;800 | 1 | 0 |
+| <800 | 1 | 0 |
 | 800–1000 | 2 | 3 |
 | 1000–1200 | 3 | 6 |
 | 1200–1400 | 4 | 9 |
@@ -50,49 +50,75 @@ Gioca!
 | 1800–2000 | 7 | 18 |
 | 2000+ | 8 | 20 |
 
-Stockfish usa `UCI_Elo` + `UCI_LimitStrength` per una simulazione realistica, non solo limiti di profondità.
+Stockfish uses `UCI_Elo` + `UCI_LimitStrength` for realistic simulation — not just depth limits.
 
 ---
 
-## Installazione
+## Installation
 
 ```bash
-# 1. Clona il repo
+# Clone
 git clone https://github.com/thousandflowers/stockfish-continue-to-play.git
 
-# 2. Vai su chrome://extensions → Modalità sviluppatore
+# Go to chrome://extensions → Developer mode
 
-# 3. Carica estensione non pacchettizzata → seleziona la cartella
+# Load unpacked extension → select the folder
+```
+
+Or install from the [Chrome Web Store]() (coming soon).
+
+---
+
+## How It Works
+
+1. **Chess.com** — Content script detects the Game Over screen, injects a "Continue on Lichess" button
+2. **FEN extraction** — Reads the position from the DOM with 5 fallback methods (attributes, shadow DOM, window state, piece reconstruction)
+3. **Open Lichess** — Saves FEN + level to storage and opens `/editor` on Lichess
+4. **Auto-start** — Content script on Lichess reads storage, sets level and color, clicks "vs Computer" automatically
+
+The Stockfish engine (compiled to WASM) runs in an isolated Web Worker — communication via UCI protocol over `postMessage`.
+
+---
+
+## Project Structure
+
+```
+├── manifest.json           # Chrome MV3 manifest
+├── content_chesscom.js     # Button injection + FEN extraction (Chess.com)
+├── content_lichess.js      # Auto-start + game-over detection (Lichess)
+├── stockfish.js            # Stockfish WASM binary (~10 MB)
+├── service-worker.js       # Minimal MV3 service worker
+├── popup.html / popup.js   # On/off toggle popup
+├── icons/                  # Extension icons (16/32/48/128)
+├── CONTRIBUTING.md         # Local dev guide
+├── LICENSE                 # MIT
+└── .github/                # Issue templates
 ```
 
 ---
 
-## Come funziona
+## Building from Source
 
-1. **Chess.com** — Il content script rileva la schermata Game Over, inietta il bottone "Continua su Lichess"
-2. **FEN extraction** — Legge la posizione dal DOM con 5 metodi di fallback (attributi, shadow DOM, window state, ricostruzione pezzi)
-3. **Apertura Lichess** — Salva FEN + livello nello storage e apre `/editor` su Lichess
-4. **Auto-start** — Il content script su Lichess legge lo storage, imposta livello e colore, clicca "vs Computer" automaticamente
+No build step required. This is a plain Chrome extension — no bundlers, no transpilers, no npm.
 
-Lo Stockfish engine (compilato in WASM) gira in un Web Worker isolato — comunicazione via UCI protocol over `postMessage`.
+1. Clone the repo
+2. Load as unpacked extension in Chrome
+3. Done
+
+To enable debug logging, open the content scripts and set `DEBUG = true` at the top.
 
 ---
 
-## Struttura
+## Similar Projects
 
-```
-├── manifest.json           # Chrome MV3
-├── content_chesscom.js     # Injection + FEN extraction (Chess.com)
-├── content_lichess.js      # Auto-start + game-over (Lichess)
-├── engine.js               # Stockfish Web Worker + UCI wrapper
-├── stockfish.js            # Stockfish WASM (~10 MB)
-├── service-worker.js       # Service worker minimo
-├── popup.html / popup.js   # Toggle on/off
-└── icons/
-```
+| Project | Description |
+|---------|-------------|
+| [Raccoon](https://github.com/thousandflowers/Raccoon) | macOS companion toolkit — security audit + dev health |
+| [Parrot](https://github.com/thousandflowers/Parrot) | Offline grammar correction for macOS |
+| [qr-multi-imgs](https://github.com/thousandflowers/qr-multi-imgs) | Batch QR scanner with Go TUI |
 
 ---
 
 ## License
 
-MIT — vedi [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).

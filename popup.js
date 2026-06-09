@@ -4,9 +4,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const dot = document.getElementById('dot');
 
   function update(active) {
-    toggle.textContent = active ? 'Disattiva' : 'Attiva';
+    toggle.textContent = active ? 'Disable' : 'Enable';
     toggle.className = active ? 'on' : 'off';
-    statusText.textContent = active ? 'Attivo' : 'Disattivato';
+    statusText.textContent = active ? 'Active' : 'Disabled';
     dot.className = active ? 'dot' : 'dot off';
   }
 
