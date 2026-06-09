@@ -1,60 +1,107 @@
 <!DOCTYPE html>
-<html>
+<html lang="it">
 <head>
-  <meta charset="UTF-8">
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      width: 240px;
-      padding: 16px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #1e2124;
-      color: #ddd;
-    }
-    h2 {
-      font-size: 15px;
-      color: #769656;
-      margin-bottom: 4px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .subtitle { font-size: 11px; color: #777; margin-bottom: 14px; }
-    .status-row {
-      display: flex; align-items: center; gap: 8px;
-      font-size: 13px; margin-bottom: 14px;
-    }
-    .dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      background: #4caf50;
-    }
-    .dot.off { background: #f44336; }
-    button {
-      width: 100%; padding: 10px;
-      border: none; border-radius: 6px;
-      font-size: 13px; font-weight: 700;
-      cursor: pointer; transition: background 0.15s;
-    }
-    #toggle.on   { background: #769656; color: #fff; }
-    #toggle.off  { background: #444; color: #aaa; }
-    #toggle.on:hover  { background: #8cb86a; }
-    #toggle.off:hover { background: #555; }
-    .hint {
-      margin-top: 12px; font-size: 11px; color: #666; line-height: 1.5;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=260">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 260px;
+    padding: 18px 16px 14px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1a1c1e;
+    color: #ccc;
+    -webkit-font-smoothing: antialiased;
+  }
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 2px;
+  }
+  .header-icon { font-size: 20px; line-height: 1; }
+  .header-text {
+    font-size: 14px;
+    font-weight: 700;
+    color: #769656;
+    letter-spacing: -0.02em;
+  }
+  .subtitle {
+    font-size: 10.5px;
+    color: #5a5c5e;
+    margin-bottom: 14px;
+    padding-left: 28px;
+  }
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    margin-bottom: 14px;
+    padding: 8px 10px;
+    background: #222528;
+    border-radius: 8px;
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #4caf50;
+    flex-shrink: 0;
+  }
+  .dot.off { background: #555; }
+  #status-text { flex: 1; }
+  button#toggle {
+    width: 100%;
+    padding: 9px;
+    border: none;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  button#toggle.on  { background: #769656; color: #fff; }
+  button#toggle.off { background: #2d2f31; color: #666; }
+  button#toggle.on:hover  { background: #8cb86a; }
+  button#toggle.off:hover { background: #3a3c3e; color: #999; }
+  .hint {
+    margin-top: 12px;
+    font-size: 10.5px;
+    color: #4a4c4e;
+    line-height: 1.5;
+  }
+  .footer {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #26282a;
+    font-size: 10px;
+    color: #3a3c3e;
+  }
+  .footer a { color: #5a7a36; text-decoration: none; }
+  .footer a:hover { color: #769656; }
+</style>
 </head>
 <body>
-  <h2>♟ Stockfish+</h2>
+  <div class="header">
+    <span class="header-icon">♟</span>
+    <span class="header-text">Stockfish+</span>
+  </div>
   <div class="subtitle">Continue to Play</div>
+
   <div class="status-row">
     <div class="dot" id="dot"></div>
     <span id="status-text">Caricamento…</span>
   </div>
-  <button id="toggle">Disattiva</button>
+
+  <button id="toggle" class="on">Disattiva</button>
+
   <div class="hint">
-    Il pulsante "Continua con Stockfish" apparirà nel popup di fine partita su Chess.com e Lichess.
+    Il pulsante "Continua su Lichess" apparirà nel popup di fine partita su Chess.com e Lichess.
   </div>
+
+  <div class="footer">
+    v2.0 · <a href="https://github.com/thousandflowers/stockfish-continue-to-play" target="_blank">GitHub</a>
+  </div>
+
   <script src="popup.js"></script>
 </body>
 </html>

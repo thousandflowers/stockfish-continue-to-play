@@ -1,27 +1,28 @@
-// content_chesscom.js — Chess.com Stockfish Continue to Play
-// After a game ends, extracts the final position (FEN) and opens a new
-// Lichess analysis tab where the user can continue playing vs Stockfish.
+// Chess.com content script for Stockfish Continue to Play.
+// After a game ends, extracts the final position (FEN) and opens a
+// Lichess analysis tab to continue playing against Stockfish.
 
-console.log('[Stockfish+] Chess.com script loaded on', location.pathname);
+const DEBUG = false;
+function log(...args) { if (DEBUG) console.log('[Stockfish+]', ...args); }
+function warn(...args) { if (DEBUG) console.warn('[Stockfish+]', ...args); }
 
-// ── State ─────────────────────────────────────────────────────────────────────
 let buttonInjected = false;
-let lastUrl      = location.href;
-let debounce     = null;
+let lastUrl = location.href;
+let debounce = null;
 
-// ── Stockfish Engine (Blob Worker) ────────────────────────────────────────────
-let sfWorker    = null;
+// ── Stockfish Engine (Blob Worker) ──────────────────────────────────────────
+let sfWorker = null;
 let workerReady = false;
-let cmdQueue    = [];
-let analyzing   = false;
+let cmdQueue = [];
+let analyzing = false;
 
 async function initEngine() {
   if (sfWorker) return;
   try {
-    const url  = chrome.runtime.getURL('stockfish.js');
+    const url = chrome.runtime.getURL('stockfish.js');
     const resp = await fetch(url);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const src  = await resp.text();
+    const src = await resp.text();
     const blob = new Blob([src], { type: 'application/javascript' });
     const blobUrl = URL.createObjectURL(blob);
     sfWorker = new Worker(blobUrl);
@@ -29,7 +30,7 @@ async function initEngine() {
 
     sfWorker.onmessage = ({ data }) => {
       if (typeof data !== 'string') return;
-      if (data === 'uciok')    { sfWorker.postMessage('isready'); return; }
+      if (data === 'uciok') { sfWorker.postMessage('isready'); return; }
       if (data === 'readyok') { workerReady = true; while (cmdQueue.length) sfWorker.postMessage(cmdQueue.shift()); return; }
       if (data.startsWith('bestmove')) {
         analyzing = false;
@@ -37,31 +38,18 @@ async function initEngine() {
         handleBestMove((move && move !== '(none)') ? move : null);
       }
     };
-    sfWorker.onerror = (e) => { console.error('[Stockfish+]', e.message); analyzing = false; handleBestMove(null); };
+    sfWorker.onerror = () => { analyzing = false; handleBestMove(null); };
     sfWorker.postMessage('uci');
-    console.log('[Stockfish+] Engine initializing…');
+    log('Engine initializing…');
   } catch (e) {
-    console.error('[Stockfish+] initEngine failed:', e);
+    warn('initEngine failed:', e);
   }
 }
 
-// ── Elo Extraction ──────────────────────────────────────────────────────
+// ── Elo Extraction ──────────────────────────────────────────────────────────
 function getOpponentElo() {
-  // Chess.com shows two user-tagline elements: one for top player, one for bottom.
-  // The opponent is always the player NOT playing at the bottom of the screen.
-  // If board is not flipped: bottom = you (white), top = opponent.
-  // If board is flipped: bottom = you (black), top = opponent.
-  // Either way, the opponent is at the TOP of the board.
-  const board = document.querySelector('wc-chess-board, chess-board');
-  const players = document.querySelectorAll('.player-component, .clock-component, .user-tagline');
-
-  // Approach 1: find rating elements in the top section of the page
-  const topSection  = document.querySelector('.board-player-component:first-child, .player-component.player-top');
-  const botSection  = document.querySelector('.board-player-component:last-child, .player-component.player-bottom');
-
+  const topSection = document.querySelector('.board-player-component:first-child, .player-component.player-top');
   let opponentEl = topSection;
-  // If we couldn't find structured top/bottom, use the game-over modal header
-  // which usually says who won ("Il Bianco ha vinto" / "Il Nero ha vinto")
 
   if (opponentEl) {
     const ratingEl = opponentEl.querySelector('.user-tagline-rating');
@@ -71,9 +59,7 @@ function getOpponentElo() {
     }
   }
 
-  // Fallback: read all ratings and return the max (higher-rated player is likely the opponent
-  // since the extension activates when YOU win / THEY lose)
-  const all  = [...document.querySelectorAll('.user-tagline-rating')];
+  const all = [...document.querySelectorAll('.user-tagline-rating')];
   const vals = all.map(el => parseInt(el.textContent.replace(/[^0-9]/g, ''))).filter(v => v > 100 && v < 4000);
   return vals.length ? Math.max(...vals) : 1500;
 }
@@ -90,20 +76,17 @@ function eloToLichessLevel(elo) {
   return 8;
 }
 
-// ── FEN Extraction ──────────────────────────────────────────────────────️
+// ── FEN Extraction ──────────────────────────────────────────────────────────
 const PIECE_MAP = {
   'wk':'K','wq':'Q','wr':'R','wb':'B','wn':'N','wp':'P',
   'bk':'k','bq':'q','br':'r','bb':'b','bn':'n','bp':'p'
 };
 
 function buildFENFromPieces(root) {
-  // Chess.com piece classes: "piece wp square-52" = white pawn on e2 (file=5,rank=2)
   const pieceDivs = root.querySelectorAll('[class*="piece"][class*="square-"]');
   if (!pieceDivs.length) return null;
-
   const grid = Array.from({ length: 8 }, () => Array(8).fill(''));
   let found = 0;
-
   pieceDivs.forEach(el => {
     let piece = null, file = -1, rank = -1;
     (el.className || '').split(/\s+/).forEach(c => {
@@ -116,9 +99,7 @@ function buildFENFromPieces(root) {
       found++;
     }
   });
-
-  if (found < 3) return null; // Too few pieces found — likely wrong DOM
-
+  if (found < 3) return null;
   return grid.map(row => {
     let s = '', e = 0;
     row.forEach(sq => { if (sq) { if (e) { s += e; e = 0; } s += sq; } else e++; });
@@ -128,9 +109,8 @@ function buildFENFromPieces(root) {
 }
 
 function getTurnFromMoveList() {
-  // Count ply nodes in move list to determine whose turn it is
   const selectors = [
-    '[data-whole-move-number]',  // Chess.com move list nodes
+    '[data-whole-move-number]',
     '.node.selected',
     '[data-node-ply]',
   ];
@@ -138,7 +118,7 @@ function getTurnFromMoveList() {
     const nodes = document.querySelectorAll(s);
     if (nodes.length) return (nodes.length % 2 === 0) ? 'w' : 'b';
   }
-  return 'w'; // default
+  return 'w';
 }
 
 function getFEN() {
@@ -148,7 +128,7 @@ function getFEN() {
   // 1. Direct attribute
   const attr = board.getAttribute('game-fen') || board.getAttribute('fen');
   if (attr && attr.split('/').length >= 7) {
-    console.log('[Stockfish+] FEN from attribute:', attr.substring(0,30));
+    log('FEN from attribute:', attr.substring(0, 30));
     return attr;
   }
 
@@ -159,7 +139,7 @@ function getFEN() {
       const s = board[key];
       const f = s?.setupFen || s?.game?.fen || s?.fen || s?.currentFen || s?.game?.setupFen;
       if (f && f.split('/').length >= 7) {
-        console.log('[Stockfish+] FEN from internal state:', f.substring(0,30));
+        log('FEN from internal state:', f.substring(0, 30));
         return f;
       }
     }
@@ -168,9 +148,8 @@ function getFEN() {
   // 3. Reconstructed from pieces in light DOM
   const lightPos = buildFENFromPieces(board);
   if (lightPos) {
-    const t = getTurnFromMoveList();
-    const fen = `${lightPos} ${t} - - 0 1`;
-    console.log('[Stockfish+] FEN from light DOM pieces:', fen.substring(0,30));
+    const fen = `${lightPos} ${getTurnFromMoveList()} - - 0 1`;
+    log('FEN from light DOM pieces:', fen.substring(0, 30));
     return fen;
   }
 
@@ -180,30 +159,28 @@ function getFEN() {
     if (shadow) {
       const shadowPos = buildFENFromPieces(shadow);
       if (shadowPos) {
-        const t = getTurnFromMoveList();
-        const fen = `${shadowPos} ${t} - - 0 1`;
-        console.log('[Stockfish+] FEN from shadow DOM pieces:', fen.substring(0,30));
+        const fen = `${shadowPos} ${getTurnFromMoveList()} - - 0 1`;
+        log('FEN from shadow DOM pieces:', fen.substring(0, 30));
         return fen;
       }
     }
   } catch (_) {}
 
-  // 5. Look for any window-level game state
+  // 5. Look for window-level game state
   try {
     const state = window.chessground?.state?.fen
                 || window.board?.game?.fen
                 || window.game?.fen;
     if (state && state.split('/').length >= 7) {
-      console.log('[Stockfish+] FEN from window state:', state.substring(0,30));
+      log('FEN from window state:', state.substring(0, 30));
       return state;
     }
   } catch (_) {}
 
-  console.warn('[Stockfish+] FEN extraction failed — using starting position');
   return null;
 }
 
-// ── Detect player color from board orientation ────────────────────────────────
+// ── Detect player color from board orientation ────────────────────────────
 function getPlayerColor() {
   const board = document.querySelector('wc-chess-board, chess-board');
   if (!board) return 'white';
@@ -213,27 +190,26 @@ function getPlayerColor() {
   return flipped ? 'black' : 'white';
 }
 
-// ── Skill Level ───────────────────────────────────────────────────────────────
+// ── Skill Level for Stockfish UCI ─────────────────────────────────────────
 function eloToSkill(elo) {
   const levels = [800, 1000, 1200, 1400, 1600, 1800, 2000];
-  const skills = [0,   3,    6,    9,    12,   15,   18,   20];
+  const skills = [0, 3, 6, 9, 12, 15, 18, 20];
   for (let i = 0; i < levels.length; i++) if (elo < levels[i]) return skills[i];
   return 20;
 }
 
-// ── Open Lichess and trigger auto-start via content_lichess.js ─────────────────️
+// ── Open Lichess + trigger auto-start via content_lichess.js ─────────────
 function openLichessAnalysis() {
   const color = getPlayerColor();
-  const elo   = getOpponentElo();
-  const lvl   = eloToLichessLevel(elo);
-  const fen   = getFEN();
+  const elo = getOpponentElo();
+  const lvl = eloToLichessLevel(elo);
+  const fen = getFEN();
 
   if (!fen) {
     showBanner('Posizione non trovata. Prova a ripetere.', '#c0392b');
     return;
   }
 
-  // Save everything for content_lichess.js to read when the tab opens
   chrome.storage.local.set({
     sfct_autoStart: true,
     sfct_level: lvl,
@@ -243,13 +219,12 @@ function openLichessAnalysis() {
   }, () => {
     const url = `https://lichess.org/editor/${encodeURIComponent(fen)}?color=${color}`;
     window.open(url, '_blank');
-    showBanner(`Lichess aperto — avvio partita automatico (Livello ${lvl}, ~${elo} Elo)`, '#3d85c8');
-    console.log(`[Stockfish+] Stored sfct data: level=${lvl} fen=${fen.substring(0,25)}…`);
+    showBanner(`Lichess aperto — avvio partita automatico (Livello ${lvl}, ~${elo} Elo)`, '#3d85c8');
+    log(`Stored sfct data: level=${lvl}`);
   });
 }
 
-
-// ── Banner ────────────────────────────────────────────────────────────────────
+// ── Banner ──────────────────────────────────────────────────────────────────
 function showBanner(html, borderColor = '#769656') {
   const old = document.getElementById('sfctplay-banner');
   if (old) old.remove();
@@ -278,7 +253,7 @@ function showBanner(html, borderColor = '#769656') {
   setTimeout(() => el.parentNode && el.remove(), 15000);
 }
 
-// ── Detect Game Over ──────────────────────────────────────────────────────────
+// ── Detect Game Over ────────────────────────────────────────────────────────
 function isGameOver() {
   return !!(
     document.querySelector('.game-over-modal-content') ||
@@ -287,9 +262,8 @@ function isGameOver() {
   );
 }
 
-// ── Inject Button into End-Game Menu (idempotent) ───────────────────────────────
+// ── Inject Button into End-Game Menu (idempotent) ──────────────────────────
 function injectButtons() {
-  // Triple guard: ID, flag, and data-attr (survives React re-renders)
   if (buttonInjected) return;
   if (document.getElementById('sfctplay-btn')) return;
 
@@ -306,14 +280,10 @@ function injectButtons() {
   }
 
   const btn = makeButton('🔗 Continua su Lichess', '#2b2d42', () => openLichessAnalysis());
-  btn.id = 'sfctplay-btn';  // already set via makeButton but be explicit
-
   (container || document.body).appendChild(btn);
 
-  // Lock: disconnect the observer so Chess.com re-renders can’t trigger duplicates
   buttonInjected = true;
   observer.disconnect();
-  console.log('[Stockfish+] Button injected. Observer disconnected.');
 }
 
 function makeButton(label, bg, onClick) {
@@ -326,20 +296,20 @@ function makeButton(label, bg, onClick) {
     'transition:background 0.18s',
   ].join(';');
   btn.onmouseover = () => btn.style.filter = 'brightness(1.15)';
-  btn.onmouseout  = () => btn.style.filter = '';
+  btn.onmouseout = () => btn.style.filter = '';
   btn.onclick = onClick;
   return btn;
 }
 
-// ── MutationObserver ─────────────────────────────────────────────────────────────
+// ── MutationObserver ─────────────────────────────────────────────────────────
 const observer = new MutationObserver(() => {
-  if (buttonInjected) return; // Already done — shouldn’t fire (observer is disconnected)
+  if (buttonInjected) return;
   clearTimeout(debounce);
   debounce = setTimeout(() => {
     if (!isGameOver()) return;
     chrome.storage.local.get(['active'], ({ active }) => {
       if (active === false) return;
-      injectButtons(); // Injection also disconnects the observer
+      injectButtons();
     });
   }, 300);
 });
@@ -349,17 +319,12 @@ function startObserver() {
 }
 startObserver();
 
-// ── SPA Navigation Reset ─────────────────────────────────────────────────────────────
+// ── SPA Navigation Reset ─────────────────────────────────────────────────────
 setInterval(() => {
   if (location.href === lastUrl) return;
   lastUrl = location.href;
-
-  // Remove leftover UI elements
   ['sfctplay-btn', 'sfctplay-banner'].forEach(id => document.getElementById(id)?.remove());
-
-  // Reset state and reconnect observer for the new page
   buttonInjected = false;
   analyzing = false;
-  startObserver(); // Re-observe the new page
-  console.log('[Stockfish+] URL changed, state reset, observer restarted.');
+  startObserver();
 }, 1000);
