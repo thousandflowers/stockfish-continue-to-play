@@ -1,14 +1,13 @@
-// popup.js
 document.addEventListener('DOMContentLoaded', () => {
   const toggle = document.getElementById('toggle');
-  const status = document.getElementById('status-text');
-  const dot    = document.getElementById('dot');
+  const statusText = document.getElementById('status-text');
+  const dot = document.getElementById('dot');
 
   function update(active) {
     toggle.textContent = active ? 'Disattiva' : 'Attiva';
-    toggle.className   = active ? 'on' : 'off';
-    status.textContent = active ? 'Attivo' : 'Disattivato';
-    dot.className      = active ? 'dot' : 'dot off';
+    toggle.className = active ? 'on' : 'off';
+    statusText.textContent = active ? 'Attivo' : 'Disattivato';
+    dot.className = active ? 'dot' : 'dot off';
   }
 
   chrome.storage.local.get(['active'], (res) => {

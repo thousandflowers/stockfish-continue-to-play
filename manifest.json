@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Stockfish Continue to Play",
   "version": "2.0",
-  "description": "Continua la partita con Stockfish dopo la fine: timeout, disconnessione o abbandono.",
+  "description": "After your opponent resigns, disconnects, or times out on Chess.com/Lichess, continue the game vs Stockfish. One click, automatic.",
   "permissions": [
     "storage"
   ],
@@ -15,7 +15,18 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_icon": "icons/icon128.png"
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
   "content_scripts": [
     {
@@ -23,30 +34,19 @@
         "*://*.chess.com/game/*",
         "*://*.chess.com/play/*"
       ],
-      "js": [
-        "content_chesscom.js"
-      ],
+      "js": ["content_chesscom.js"],
       "run_at": "document_end"
     },
     {
-      "matches": [
-        "*://*.lichess.org/*"
-      ],
-      "js": [
-        "content_lichess.js"
-      ],
+      "matches": ["*://*.lichess.org/*"],
+      "js": ["content_lichess.js"],
       "run_at": "document_end"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": [
-        "stockfish.js"
-      ],
-      "matches": [
-        "*://*.chess.com/*",
-        "*://*.lichess.org/*"
-      ]
+      "resources": ["stockfish.js"],
+      "matches": ["*://*.chess.com/*", "*://*.lichess.org/*"]
     }
   ],
   "content_security_policy": {
