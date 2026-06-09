@@ -106,17 +106,6 @@ No build step required. This is a plain Chrome extension — no bundlers, no tra
 3. Done
 
 To enable debug logging, open the content scripts and set `DEBUG = true` at the top.
-
----
-
-## Similar Projects
-
-| Project | Description |
-|---------|-------------|
-| [Raccoon](https://github.com/thousandflowers/Raccoon) | macOS companion toolkit — security audit + dev health |
-| [Parrot](https://github.com/thousandflowers/Parrot) | Offline grammar correction for macOS |
-| [qr-multi-imgs](https://github.com/thousandflowers/qr-multi-imgs) | Batch QR scanner with Go TUI |
-
 ---
 
 ## License
