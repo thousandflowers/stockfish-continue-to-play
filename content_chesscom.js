@@ -125,20 +125,22 @@ function getFEN() {
   const board = document.querySelector('wc-chess-board, chess-board');
   if (!board) return null;
 
-  // 1. Direct attribute
+  // 1. Direct attribute (fastest, most reliable)
   const attr = board.getAttribute('game-fen') || board.getAttribute('fen');
   if (attr && attr.split('/').length >= 7) {
+    console.log('[Stockfish+][fen:1] attribute');
     log('FEN from attribute:', attr.substring(0, 30));
     return attr;
   }
 
-  // 2. Internal component state
+  // 2. Internal component state (React internals)
   try {
     const key = Object.keys(board).find(k => k.startsWith('__'));
     if (key) {
       const s = board[key];
       const f = s?.setupFen || s?.game?.fen || s?.fen || s?.currentFen || s?.game?.setupFen;
       if (f && f.split('/').length >= 7) {
+        console.log('[Stockfish+][fen:2] internal state');
         log('FEN from internal state:', f.substring(0, 30));
         return f;
       }
@@ -149,6 +151,7 @@ function getFEN() {
   const lightPos = buildFENFromPieces(board);
   if (lightPos) {
     const fen = `${lightPos} ${getTurnFromMoveList()} - - 0 1`;
+    console.log('[Stockfish+][fen:3] light DOM pieces');
     log('FEN from light DOM pieces:', fen.substring(0, 30));
     return fen;
   }
@@ -160,6 +163,7 @@ function getFEN() {
       const shadowPos = buildFENFromPieces(shadow);
       if (shadowPos) {
         const fen = `${shadowPos} ${getTurnFromMoveList()} - - 0 1`;
+        console.log('[Stockfish+][fen:4] shadow DOM');
         log('FEN from shadow DOM pieces:', fen.substring(0, 30));
         return fen;
       }
@@ -172,11 +176,13 @@ function getFEN() {
                 || window.board?.game?.fen
                 || window.game?.fen;
     if (state && state.split('/').length >= 7) {
+      console.log('[Stockfish+][fen:5] window state');
       log('FEN from window state:', state.substring(0, 30));
       return state;
     }
   } catch (_) {}
 
+  console.warn('[Stockfish+][fen:0] ALL METHODS FAILED');
   return null;
 }
 

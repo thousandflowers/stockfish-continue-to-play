@@ -31,26 +31,28 @@ Play!
 ## Features
 
 - **Chess.com + Lichess support** — captures final position on both platforms
-- **Adaptive difficulty** — Stockfish auto-calibrates to opponent Elo (1320–3190)
+- **Adaptive difficulty** — Stockfish auto-calibrates to opponent Elo
 - **No backend** — Stockfish runs in WASM inside the browser. 0 servers, 0 KB sent
 - **Zero configuration** — install and play
 - **On/Off toggle** — popup to disable when not needed
 - **Open source** — no tracking, no telemetry
 
-### Elo Adaptation
+### Difficulty Mapping
 
-| Opponent Elo | Level | Skill Level |
+The table below shows how your opponent's Elo rating maps to a human-like difficulty. Internally, Stockfish uses the `UCI_Elo` setting (range **1320–3190**) for engine-level strength, which produces realistic play without artificial depth limits.
+
+| Opponent Elo | Lichess Level | Stockfish `UCI_Elo` |
 |:---:|:---:|:---:|
-| <800 | 1 | 0 |
-| 800–1000 | 2 | 3 |
-| 1000–1200 | 3 | 6 |
-| 1200–1400 | 4 | 9 |
-| 1400–1600 | 5 | 12 |
-| 1600–1800 | 6 | 15 |
-| 1800–2000 | 7 | 18 |
-| 2000+ | 8 | 20 |
+| <800 | 1 | 1320 |
+| 800–1000 | 2 | 1500 |
+| 1000–1200 | 3 | 1650 |
+| 1200–1400 | 4 | 1800 |
+| 1400–1600 | 5 | 2000 |
+| 1600–1800 | 6 | 2200 |
+| 1800–2000 | 7 | 2500 |
+| 2000+ | 8 | 3190 |
 
-Stockfish uses `UCI_Elo` + `UCI_LimitStrength` for realistic simulation — not just depth limits.
+The result: the engine plays at approximately your opponent's strength — not weaker, not stronger.
 
 ---
 
@@ -59,11 +61,16 @@ Stockfish uses `UCI_Elo` + `UCI_LimitStrength` for realistic simulation — not 
 ```bash
 # Clone
 git clone https://github.com/thousandflowers/stockfish-continue-to-play.git
+cd stockfish-continue-to-play
+
+# Download Stockfish WASM binary (~10 MB)
+bash scripts/download-stockfish.sh
 
 # Go to chrome://extensions → Developer mode
-
-# Load unpacked extension → select the folder
+# Load unpacked extension → select this folder
 ```
+
+> `stockfish.js` (~10 MB) is excluded from git. The [download script](scripts/download-stockfish.sh) fetches it from the latest release. Or install Git LFS (`git lfs pull`) before loading.
 
 Or install from the [Chrome Web Store]() (coming soon).
 
