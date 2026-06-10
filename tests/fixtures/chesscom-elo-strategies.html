@@ -1,0 +1,34 @@
+<!-- Chess.com page testing Elo strategy prioritization -->
+<!-- Strategy 1: first .board-player-component is first child -->
+<div class="board-player-component">
+  <span class="user-tagline-rating">1850</span>
+</div>
+
+<!-- Strategy 2: player-top (placed after strategy 1 element) -->
+<div class="player-component player-top">
+  <span class="user-tagline-rating">1920</span>
+</div>
+
+<!-- Strategy 3: data-opponent-rating (should NOT be matched until strategies 1-2 fail) -->
+<div data-opponent-rating="2010"></div>
+
+<!-- Strategy 4: data-rating on opponent section -->
+<div class="board-player-component">
+  <span data-rating="1950"></span>
+</div>
+
+<!-- Strategy 5: rating-number -->
+<div class="board-player-component">
+  <span class="rating-number">1670</span>
+</div>
+
+<!-- Strategy 6: generic rating class -->
+<div class="player-rating">2120</div>
+
+<!-- Strategy 7: extra user-tagline-rating (max used by strategy 7) -->
+<span class="user-tagline-rating">1200</span>
+
+<!-- Move list for getTurnFromMoveList fallback -->
+<div class="node selected"></div>
+<div class="node selected"></div>
+<div class="node selected"></div>

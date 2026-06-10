@@ -12,11 +12,11 @@ Thanks for wanting to improve Stockfish Continue to Play!
 
 ```bash
 npm install
-npm test        # 76 tests across chess + lichess utils
+npm test        # 95 tests across chess + lichess utils + fixtures
 npm run test:watch  # dev mode
 ```
 
-Tests use **the same `lib/*-utils.js` files** the extension loads — no mocked copies, no bundler shims.
+Tests use **the same `lib/*-utils.js` files** the extension loads — no mocked copies, no bundler shims. Snapshot E2E tests (`tests/fixtures.test.js`) load realistic HTML pages and verify the full extraction pipeline.
 
 ## Pull request
 
@@ -29,16 +29,19 @@ Tests use **the same `lib/*-utils.js` files** the extension loads — no mocked 
 
 | File | Role |
 |------|------|
-| `lib/chess-utils.js` | Pure DOM functions for Chess.com (FEN, Elo, turn, color, game-over) |
+| `lib/chess-utils.js` | Pure DOM functions for Chess.com (FEN, Elo, turn, color, game-over, UCI_Elo mapping) |
 | `lib/lichess-utils.js` | Pure DOM functions for Lichess (editor form, selectors, game-over) |
 | `tests/chess-utils.test.js` | 54 tests — every Elo strategy, FEN fallback, and mapping |
 | `tests/lichess-utils.test.js` | 22 tests — editor auto-start, selectors, form builders |
+| `tests/fixtures.test.js` | 19 snapshot E2E tests against realistic HTML pages |
+| `tests/fixtures/` | HTML fixture files (Chess.com game-over, Lichess editor, etc.) |
 | `content_chesscom.js` | Game-over detection + button injection on Chess.com |
 | `content_lichess.js` | Auto-start on Lichess /editor + game-over detection |
 | `stockfish.js` | Stockfish WASM (~10 MB) |
 | `service-worker.js` | MV3 service worker (install handler) |
 | `popup.html` / `popup.js` | Popup on/off toggle |
 | `package.json` / `vitest.config.js` | Test runner (vitest + jsdom) |
+| `manifest-firefox.json` | Firefox MV3 manifest (alternative to manifest.json) |
 
 ## Notes
 

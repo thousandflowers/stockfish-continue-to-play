@@ -1,0 +1,35 @@
+<!-- Chess.com game over page — FEN via attribute, Elo via strategy 1 -->
+<wc-chess-board
+  class="board"
+  game-fen="rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
+  orientation="white"
+>
+</wc-chess-board>
+
+<!-- Opponent section (top opponent is first child) -->
+<div class="board-player-component">
+  <div class="player-info">
+    <span class="user-tagline-rating">1850</span>
+  </div>
+</div>
+
+<!-- Player section (second) -->
+<div class="board-player-component">
+  <div class="player-info">
+    <span class="user-tagline-rating">1720</span>
+  </div>
+</div>
+
+<!-- Move list — odd count => black to move -->
+<div data-whole-move-number="0">e4</div>
+<div data-whole-move-number="1">e5</div>
+<div data-whole-move-number="2">Nf3</div>
+<div data-whole-move-number="3">Nc6</div>
+<div data-whole-move-number="4">Bb5</div>
+<div data-whole-move-number="5">a6</div>
+
+<!-- Game over modal triggers isGameOver -->
+<div class="game-over-modal-content">
+  <div class="game-over-header">Game Over</div>
+  <div class="result">1-0</div>
+</div>
