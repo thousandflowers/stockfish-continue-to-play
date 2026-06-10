@@ -37,21 +37,6 @@ Play!
 - **On/Off toggle** — popup to disable when not needed
 - **Open source** — no tracking, no telemetry
 
-### Difficulty Mapping
-
-The extension reads your opponent's rating from the DOM using **9 independent strategies** (primary selectors, data attributes, React internal state, preloaded window state, and CSS wildcard patterns). Each strategy is logged as `[elo:1]`–`[elo:9]` so you can immediately identify which selector works — or which broke after a Chess.com update.
-
-Once extracted, the Elo is mapped to two difficulty systems:
-
-| Output | Range | Type |
-|:---|:---:|:---|
-| Lichess AI Level | 1–8 | Discrete (8 buckets) |
-| Stockfish `UCI_Elo` | 1320–3190 | **Continuous** (linear interpolation) |
-
-**`eloToUCIElo()`** maps the opponent's Elo (400–2500) linearly to Stockfish's UCI_Elo range (1320–3190). Values outside [400, 2500] are clamped. This gives a smooth difficulty curve without the jumps of bucket-based level selection — your opponent's exact strength is preserved in the UCI_Elo parameter sent to Stockfish.
-
-The Lichess level (1–8) is used for the Lichess AI form, while the UCI_Elo value is stored alongside it for direct Stockfish control.
-
 ---
 
 ## Installation
@@ -86,74 +71,14 @@ The extension is **not yet published** on the Chrome Web Store or Firefox Add-on
 
 ---
 
-## How It Works
+## Contributing
 
-1. **Chess.com** — Content script detects the Game Over screen, injects a "Continue on Lichess" button
-2. **FEN extraction** — Reads the position from the DOM with 5 fallback methods (attributes, React internal state, light DOM pieces, shadow DOM, window state)
-3. **Elo detection** — Reads opponent rating with 9 fallback strategies (CSS selectors, data attributes, React state, preloaded data)
-4. **Open Lichess** — Saves FEN + level + UCI_Elo to storage and opens `/editor` on Lichess
-5. **Auto-start** — Content script on Lichess reads storage, sets level and color, clicks "vs Computer" automatically
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local dev setup, testing, and PR guidelines.
 
-Logic shared between platforms lives in `lib/chess-utils.js` and `lib/lichess-utils.js` — pure DOM functions tested independently from the extension runtime. **95 tests** cover all extraction paths, including snapshot tests against realistic HTML fixtures.
+## Architecture
 
-The Stockfish engine (compiled to WASM) runs in an isolated Web Worker — communication via UCI protocol over `postMessage`.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for technical details on difficulty mapping, FEN extraction (5 fallbacks), Elo detection (9 strategies), project structure, and browser porting.
 
----
-
-## Project Structure
-
-```
-├── lib/
-│   ├── chess-utils.js      # Pure functions: FEN, Elo, turn, color, game-over (Chess.com)
-│   └── lichess-utils.js    # Pure functions: editor form, selectors, game-over (Lichess)
-├── tests/
-│   ├── fixtures/              # HTML snapshot fixtures (realistic DOM pages)
-│   ├── chess-utils.test.js    # 54 tests — FEN, Elo, color, turn, game-over
-│   ├── lichess-utils.test.js  # 22 tests — editor auto-start, selectors, form
-│   └── fixtures.test.js       # 19 tests — snapshot E2E extraction pipeline
-├── content_chesscom.js     # Button injection + FEN extraction (Chess.com)
-├── content_lichess.js      # Auto-start + game-over detection (Lichess)
-├── stockfish.js            # Stockfish WASM binary (~10 MB)
-├── service-worker.js       # Minimal MV3 service worker
-├── popup.html / popup.js   # On/off toggle popup
-├── package.json            # npm test runner (vitest + jsdom)
-├── vitest.config.js        # Vitest configuration
-├── icons/                  # Extension icons (16/32/48/128)
-├── CONTRIBUTING.md         # Local dev guide
-├── LICENSE                 # MIT
-└── .github/                # Issue templates
-```
-
----
-
-## Building from Source
-
-No build step required. This is a plain browser extension — no bundlers, no transpilers, no npm.
-
-```bash
-git clone https://github.com/thousandflowers/stockfish-continue-to-play.git
-cd stockfish-continue-to-play
-bash scripts/download-stockfish.sh
-# Chrome: chrome://extensions → Developer mode → Load unpacked
-# Firefox: cp manifest-firefox.json manifest.json, then about:debugging → Load Temporary Add-on
-```
-
-To enable debug logging, open the content scripts and set `DEBUG = true` at the top.
-
-### Running Tests
-
-```bash
-npm install    # install vitest + jsdom
-npm test       # runs 95 tests (vitest)
-```
-
-Tests run against the same `lib/*-utils.js` files used at runtime — no mocking the real code. Each FEN fallback and Elo strategy is tested individually. Snapshot E2E tests verify the full extraction pipeline against realistic HTML page fixtures.
-
-### Browser Porting
-
-- **Chrome MV3**: `manifest.json` — works as-is in Chrome, Edge, Brave, Arc, Opera.
-- **Firefox MV3**: `manifest-firefox.json` — requires `browser_specific_settings.gecko.id` (replace the placeholder UUID with your Firefox Add-ons ID before publishing). Copy over `manifest.json` to test locally.
-- **Safari**: Not yet supported. The extension uses MV3 `chrome.*` APIs; a Safari Xcode project wrapper would be needed.
 ---
 
 ## License
