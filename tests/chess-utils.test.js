@@ -60,47 +60,52 @@ describe('eloToLichessLevel', () => {
   });
 });
 
-// ── eloToSkill ──────────────────────────────────────────────────────────
+// ── eloToUCIElo ──────────────────────────────────────────────────────────
 
-describe('eloToSkill', () => {
-  it('0 for elo < 800', () => {
-    expect(utils.eloToSkill(0)).toBe(0);
-    expect(utils.eloToSkill(799)).toBe(0);
+describe('eloToUCIElo', () => {
+  it('clamps below 400 to 1320', () => {
+    expect(utils.eloToUCIElo(0)).toBe(1320);
+    expect(utils.eloToUCIElo(399)).toBe(1320);
   });
 
-  it('3 for 800–999', () => {
-    expect(utils.eloToSkill(800)).toBe(3);
-    expect(utils.eloToSkill(999)).toBe(3);
+  it('maps 400 → 1320', () => {
+    expect(utils.eloToUCIElo(400)).toBe(1320);
   });
 
-  it('6 for 1000–1199', () => {
-    expect(utils.eloToSkill(1000)).toBe(6);
-    expect(utils.eloToSkill(1199)).toBe(6);
+  it('maps 1450 (midpoint approximation)', () => {
+    // 1450 is exactly halfway through 400-2500
+    // Expected: 1320 + (3190-1320) * ((1450-400)/(2500-400))
+    // = 1320 + 1870 * (1050/2100) = 1320 + 1870 * 0.5 = 1320 + 935 = 2255
+    expect(utils.eloToUCIElo(1450)).toBe(2255);
   });
 
-  it('9 for 1200–1399', () => {
-    expect(utils.eloToSkill(1200)).toBe(9);
-    expect(utils.eloToSkill(1399)).toBe(9);
+  it('maps 2500 → 3190', () => {
+    expect(utils.eloToUCIElo(2500)).toBe(3190);
   });
 
-  it('12 for 1400–1599', () => {
-    expect(utils.eloToSkill(1400)).toBe(12);
-    expect(utils.eloToSkill(1599)).toBe(12);
+  it('clamps above 2500 to 3190', () => {
+    expect(utils.eloToUCIElo(3000)).toBe(3190);
+    expect(utils.eloToUCIElo(9999)).toBe(3190);
   });
 
-  it('15 for 1600–1799', () => {
-    expect(utils.eloToSkill(1600)).toBe(15);
-    expect(utils.eloToSkill(1799)).toBe(15);
+  it('linear — 1000 maps to ~1644', () => {
+    // 1320 + 1870 * (600/2100) = 1320 + 534.28... = 1854
+    // Wait: 1000-400 = 600. 600/2100 = 0.2857... 1870 * 0.2857 = 534.28
+    // 1320 + 534 = 1854
+    expect(utils.eloToUCIElo(1000)).toBe(1854);
   });
 
-  it('18 for 1800–1999', () => {
-    expect(utils.eloToSkill(1800)).toBe(18);
-    expect(utils.eloToSkill(1999)).toBe(18);
+  it('linear — 2000 maps to ~2749', () => {
+    // 2000-400 = 1600. 1600/2100 = 0.7619... 1870 * 0.7619 = 1424.76
+    // 1320 + 1425 = 2745
+    // Let me compute precisely: 1320 + 1870 * (1600/2100) = 1320 + 1870 * 16/21
+    // = 1320 + 29920/21 = 1320 + 1424.76... = 2744.76... → round → 2745
+    expect(utils.eloToUCIElo(2000)).toBe(2745);
   });
 
-  it('20 for 2000+', () => {
-    expect(utils.eloToSkill(2000)).toBe(20);
-    expect(utils.eloToSkill(3000)).toBe(20);
+  it('rounds to nearest integer', () => {
+    // 401 elo: 1320 + 1870 * (1/2100) = 1320 + 0.89 = 1320.89 → 1321
+    expect(utils.eloToUCIElo(401)).toBe(1321);
   });
 });
 

@@ -53,6 +53,7 @@ function openLichessAnalysis() {
   const color = getPlayerColor();
   const elo = getOpponentElo();
   const lvl = eloToLichessLevel(elo);
+  const uciElo = eloToUCIElo(elo);
   const fen = getFEN();
 
   if (!fen) {
@@ -63,14 +64,15 @@ function openLichessAnalysis() {
   chrome.storage.local.set({
     sfct_autoStart: true,
     sfct_level: lvl,
+    sfct_uciElo: uciElo,
     sfct_fen: fen,
     sfct_color: color,
     sfct_timestamp: Date.now()
   }, () => {
     const url = `https://lichess.org/editor/${encodeURIComponent(fen)}?color=${color}`;
     window.open(url, '_blank');
-    showBanner(`Lichess opened — game starting automatically (Level ${lvl}, ~${elo} Elo)`, '#3d85c8');
-    log(`Stored sfct data: level=${lvl}`);
+    showBanner(`Lichess opened — game starting automatically (Level ${lvl}, UCI_Elo ${uciElo})`, '#3d85c8');
+    log(`Stored sfct data: level=${lvl}, uciElo=${uciElo}`);
   });
 }
 
