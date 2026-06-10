@@ -1,6 +1,8 @@
 // Chess.com content script for Stockfish Continue to Play.
 // After a game ends, extracts the final position (FEN) and opens a
 // Lichess analysis tab to continue playing against Stockfish.
+//
+// Pure chess functions live in lib/chess-utils.js (loaded first via manifest).
 
 const DEBUG = false;
 function log(...args) { if (DEBUG) console.log('[Stockfish+]', ...args); }
@@ -44,164 +46,6 @@ async function initEngine() {
   } catch (e) {
     warn('initEngine failed:', e);
   }
-}
-
-// ── Elo Extraction ──────────────────────────────────────────────────────────
-function getOpponentElo() {
-  const topSection = document.querySelector('.board-player-component:first-child, .player-component.player-top');
-  let opponentEl = topSection;
-
-  if (opponentEl) {
-    const ratingEl = opponentEl.querySelector('.user-tagline-rating');
-    if (ratingEl) {
-      const v = parseInt(ratingEl.textContent.replace(/[^0-9]/g, ''));
-      if (v > 100 && v < 4000) return v;
-    }
-  }
-
-  const all = [...document.querySelectorAll('.user-tagline-rating')];
-  const vals = all.map(el => parseInt(el.textContent.replace(/[^0-9]/g, ''))).filter(v => v > 100 && v < 4000);
-  return vals.length ? Math.max(...vals) : 1500;
-}
-
-// Maps opponent Elo to Lichess computer level (1–8)
-function eloToLichessLevel(elo) {
-  if (elo < 1000) return 1;
-  if (elo < 1200) return 2;
-  if (elo < 1400) return 3;
-  if (elo < 1600) return 4;
-  if (elo < 1800) return 5;
-  if (elo < 2000) return 6;
-  if (elo < 2300) return 7;
-  return 8;
-}
-
-// ── FEN Extraction ──────────────────────────────────────────────────────────
-const PIECE_MAP = {
-  'wk':'K','wq':'Q','wr':'R','wb':'B','wn':'N','wp':'P',
-  'bk':'k','bq':'q','br':'r','bb':'b','bn':'n','bp':'p'
-};
-
-function buildFENFromPieces(root) {
-  const pieceDivs = root.querySelectorAll('[class*="piece"][class*="square-"]');
-  if (!pieceDivs.length) return null;
-  const grid = Array.from({ length: 8 }, () => Array(8).fill(''));
-  let found = 0;
-  pieceDivs.forEach(el => {
-    let piece = null, file = -1, rank = -1;
-    (el.className || '').split(/\s+/).forEach(c => {
-      if (PIECE_MAP[c]) piece = PIECE_MAP[c];
-      const m = c.match(/^square-(\d)(\d)$/);
-      if (m) { file = parseInt(m[1]) - 1; rank = parseInt(m[2]) - 1; }
-    });
-    if (piece && file >= 0 && rank >= 0) {
-      grid[7 - rank][file] = piece;
-      found++;
-    }
-  });
-  if (found < 3) return null;
-  return grid.map(row => {
-    let s = '', e = 0;
-    row.forEach(sq => { if (sq) { if (e) { s += e; e = 0; } s += sq; } else e++; });
-    if (e) s += e;
-    return s;
-  }).join('/');
-}
-
-function getTurnFromMoveList() {
-  const selectors = [
-    '[data-whole-move-number]',
-    '.node.selected',
-    '[data-node-ply]',
-  ];
-  for (const s of selectors) {
-    const nodes = document.querySelectorAll(s);
-    if (nodes.length) return (nodes.length % 2 === 0) ? 'w' : 'b';
-  }
-  return 'w';
-}
-
-function getFEN() {
-  const board = document.querySelector('wc-chess-board, chess-board');
-  if (!board) return null;
-
-  // 1. Direct attribute (fastest, most reliable)
-  const attr = board.getAttribute('game-fen') || board.getAttribute('fen');
-  if (attr && attr.split('/').length >= 7) {
-    console.log('[Stockfish+][fen:1] attribute');
-    log('FEN from attribute:', attr.substring(0, 30));
-    return attr;
-  }
-
-  // 2. Internal component state (React internals)
-  try {
-    const key = Object.keys(board).find(k => k.startsWith('__'));
-    if (key) {
-      const s = board[key];
-      const f = s?.setupFen || s?.game?.fen || s?.fen || s?.currentFen || s?.game?.setupFen;
-      if (f && f.split('/').length >= 7) {
-        console.log('[Stockfish+][fen:2] internal state');
-        log('FEN from internal state:', f.substring(0, 30));
-        return f;
-      }
-    }
-  } catch (_) {}
-
-  // 3. Reconstructed from pieces in light DOM
-  const lightPos = buildFENFromPieces(board);
-  if (lightPos) {
-    const fen = `${lightPos} ${getTurnFromMoveList()} - - 0 1`;
-    console.log('[Stockfish+][fen:3] light DOM pieces');
-    log('FEN from light DOM pieces:', fen.substring(0, 30));
-    return fen;
-  }
-
-  // 4. Shadow DOM (wc-chess-board may render pieces in shadow root)
-  try {
-    const shadow = board.shadowRoot;
-    if (shadow) {
-      const shadowPos = buildFENFromPieces(shadow);
-      if (shadowPos) {
-        const fen = `${shadowPos} ${getTurnFromMoveList()} - - 0 1`;
-        console.log('[Stockfish+][fen:4] shadow DOM');
-        log('FEN from shadow DOM pieces:', fen.substring(0, 30));
-        return fen;
-      }
-    }
-  } catch (_) {}
-
-  // 5. Look for window-level game state
-  try {
-    const state = window.chessground?.state?.fen
-                || window.board?.game?.fen
-                || window.game?.fen;
-    if (state && state.split('/').length >= 7) {
-      console.log('[Stockfish+][fen:5] window state');
-      log('FEN from window state:', state.substring(0, 30));
-      return state;
-    }
-  } catch (_) {}
-
-  console.warn('[Stockfish+][fen:0] ALL METHODS FAILED');
-  return null;
-}
-
-// ── Detect player color from board orientation ────────────────────────────
-function getPlayerColor() {
-  const board = document.querySelector('wc-chess-board, chess-board');
-  if (!board) return 'white';
-  const flipped = board.hasAttribute('flipped') ||
-                  board.getAttribute('orientation') === 'black' ||
-                  board.classList.contains('flipped');
-  return flipped ? 'black' : 'white';
-}
-
-// ── Skill Level for Stockfish UCI ─────────────────────────────────────────
-function eloToSkill(elo) {
-  const levels = [800, 1000, 1200, 1400, 1600, 1800, 2000];
-  const skills = [0, 3, 6, 9, 12, 15, 18, 20];
-  for (let i = 0; i < levels.length; i++) if (elo < levels[i]) return skills[i];
-  return 20;
 }
 
 // ── Open Lichess + trigger auto-start via content_lichess.js ─────────────
@@ -257,15 +101,6 @@ function showBanner(html, borderColor = '#769656') {
   el.onclick = () => el.remove();
   document.body.appendChild(el);
   setTimeout(() => el.parentNode && el.remove(), 15000);
-}
-
-// ── Detect Game Over ────────────────────────────────────────────────────────
-function isGameOver() {
-  return !!(
-    document.querySelector('.game-over-modal-content') ||
-    document.querySelector('.game-over-modal-component') ||
-    document.querySelector('.game-over-buttons-component')
-  );
 }
 
 // ── Inject Button into End-Game Menu (idempotent) ──────────────────────────

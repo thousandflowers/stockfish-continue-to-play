@@ -34,12 +34,12 @@
         "*://*.chess.com/game/*",
         "*://*.chess.com/play/*"
       ],
-      "js": ["content_chesscom.js"],
+      "js": ["lib/chess-utils.js", "content_chesscom.js"],
       "run_at": "document_end"
     },
     {
       "matches": ["*://*.lichess.org/*"],
-      "js": ["content_lichess.js"],
+      "js": ["lib/lichess-utils.js", "content_lichess.js"],
       "run_at": "document_end"
     }
   ],

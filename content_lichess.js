@@ -118,13 +118,7 @@ if (location.pathname.startsWith('/editor')) {
 let buttonInjected = false;
 let debounce = null;
 
-function isGameOver() {
-  return !!(
-    document.querySelector('.result-wrap') ||
-    document.querySelector('.game__result') ||
-    document.querySelector('.crosstable__score')
-  );
-}
+// isGameOver() defined in lib/lichess-utils.js
 
 function injectButton() {
   if (document.getElementById('sfctplay-btn') || buttonInjected) return;
