@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Stockfish Continue to Play",
-  "version": "2.0",
+  "version": "2.0.3",
   "description": "After your opponent resigns, disconnects, or times out on Chess.com/Lichess, continue the game vs Stockfish. One click, automatic.",
   "permissions": [
     "storage"

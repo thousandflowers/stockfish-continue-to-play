@@ -218,7 +218,7 @@ function submitAIForm(level, color, fen) {
     form.method = 'POST';
     form.action = '/setup/ai';
     const fields = {
-      'variant': '1',
+      'variant': fenVal ? '2' : '1',
       'fenVariant': fenVal || '',
       'fen': fenVal || '',
       'level': String(level),
