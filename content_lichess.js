@@ -222,8 +222,10 @@ function submitAIForm(level, color, fen) {
       'fenVariant': fenVal || '',
       'level': String(level),
       'color': color,
+      'timeMode': '1',
       'time': '10',
       'increment': '5',
+      'days': '2',
     };
     for (const [name, value] of Object.entries(fields)) {
       const input = document.createElement('input');
@@ -361,7 +363,7 @@ const observer = new MutationObserver((mutations) => {
     chrome.storage.local.get(['active'], ({ active }) => {
       if (active !== false) injectButton();
     });
-  }, 500);
+  }, 100);
 });
 
 log('Starting MutationObserver on Lichess');
