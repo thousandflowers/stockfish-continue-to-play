@@ -476,9 +476,26 @@ describe('isGameOver', () => {
     expect(utils.isGameOver()).toBe(true);
   });
 
+  it('detects .game-result-component', () => {
+    document.body.appendChild(el('.game-result-component'));
+    expect(utils.isGameOver()).toBe(true);
+  });
+
+  it('detects .board-modal-container', () => {
+    document.body.appendChild(el('.board-modal-container'));
+    expect(utils.isGameOver()).toBe(true);
+  });
+
+  it('detects [class*="result-text"]', () => {
+    const e = document.createElement('div');
+    e.className = 'some-random-result-text-container';
+    document.body.appendChild(e);
+    expect(utils.isGameOver()).toBe(true);
+  });
+
   function el(className) {
     const e = document.createElement('div');
-    e.className = className.slice(1);
+    e.className = className.startsWith('.') ? className.slice(1) : className;
     return e;
   }
 });

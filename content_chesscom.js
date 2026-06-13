@@ -4,7 +4,7 @@
 //
 // Pure chess functions live in lib/chess-utils.js (loaded first via manifest).
 
-const DEBUG = false;
+const DEBUG = true;
 function log(...args) { if (DEBUG) console.log('[Stockfish+]', ...args); }
 function warn(...args) { if (DEBUG) console.warn('[Stockfish+]', ...args); }
 
@@ -55,6 +55,8 @@ function openLichessAnalysis() {
   const lvl = eloToLichessLevel(elo);
   const uciElo = eloToUCIElo(elo);
   const fen = getFEN();
+
+  log('Opening Lichess with:', { color, elo, lvl, uciElo, fen });
 
   if (!fen) {
     showBanner('Position not found. Try again.', '#c0392b');
@@ -110,54 +112,134 @@ function injectButtons() {
   if (buttonInjected) return;
   if (document.getElementById('sfctplay-btn')) return;
 
-  const containerSelectors = [
-    '.game-over-buttons-component',
-    '.game-over-modal-buttons',
-    '.game-over-modal-content',
-    '.board-modal-container',
-  ];
-  let container = null;
-  for (const s of containerSelectors) {
-    container = document.querySelector(s);
-    if (container) break;
+  log('Attempting native button injection, strictly avoiding ads, by first finding the main modal...');
+
+  let mainModal = document.querySelector(
+    '.game-over-modal-shell-buttons, ' + // Prioritize this as it contains the action buttons
+    '.game-over-modal-content, ' + // Primary modal content
+    'div[data-cy="game-over-dialog"], ' + // Specific data-cy for dialog
+    '.game-over-buttons-component, ' + // Sometimes this is the top level wrapper
+    '.game-over-container' // Another common game over container
+  );
+
+  if (!mainModal) {
+    warn('Main game-over modal not found. Retrying on next mutation...');
+    return;
   }
 
-  const btn = makeButton('🔗 Continue on Lichess', '#2b2d42', () => openLichessAnalysis());
-  (container || document.body).appendChild(btn);
+  // Now, *within this mainModal*, search for a suitable sibling button.
+  // This is where we ensure the button is relevant to the game-over context.
+  const knownButtonSelectors = [
+    'a[data-cy="game-over-modal-game-review-button"]:not([class*="ad-upgrade"])',
+    'button[data-cy="game-over-modal-new-game-button"]:not([class*="ad-upgrade"])',
+    'button[data-cy="game-over-modal-rematch-button"]:not([class*="ad-upgrade"])',
+    '.game-over-buttons-buttons button:not([class*="ad-upgrade"])',
+    '.game-over-buttons-buttons a:not([class*="ad-upgrade"])',
+    'button:contains("Nuova partita"):not([class*="ad-upgrade"])',
+    'button:contains("New Game"):not([class*="ad-upgrade"])',
+    'button:contains("Analizza"):not([class*="ad-upgrade"])',
+    'button:contains("Analyze"):not([class*="ad-upgrade"])',
+    'button:contains("Rivedi Partita"):not([class*="ad-upgrade"])',
+    'button:contains("Review Game"):not([class*="ad-upgrade"])'
+  ];
 
+  let siblingButton = null;
+  for (const s of knownButtonSelectors) {
+    const tempButton = mainModal.querySelector(s); // Search ONLY within mainModal
+    if (tempButton && !tempButton.closest('[class*="ad-sidecar"]') && !tempButton.closest('[id*="ad"]')) {
+      siblingButton = tempButton;
+      log('Found a suitable sibling button within main modal:', s, siblingButton);
+      break;
+    }
+  }
+
+  if (!siblingButton) {
+    warn('No suitable sibling button found within main game-over modal. Retrying on next mutation...');
+    return;
+  }
+
+  const container = siblingButton.parentElement;
+  if (!container) {
+    warn('Sibling button has no parentElement. This should not happen. Aborting injection.');
+    return;
+  }
+
+  // Final check to ensure the parent container itself is not an ad container
+  if (container.closest('[class*="ad-sidecar"]') || container.closest('[id*="ad"]')) {
+    warn('Sibling button\'s parent is unexpectedly part of an ad container. Aborting injection.');
+    return;
+  }
+
+  const btn = makeButton('🔗 Continue on Lichess', siblingButton);
+  btn.id = 'sfctplay-btn';
+  
+  // Insert before the found sibling button
+  container.insertBefore(btn, siblingButton);
+
+  log('Button integrated into main menu successfully');
   buttonInjected = true;
-  observer.disconnect();
 }
 
-function makeButton(label, bg, onClick) {
+// Updated makeButton to take siblingButton for cloning
+function makeButton(label, siblingButton) {
   const btn = document.createElement('button');
-  btn.innerHTML = label;
-  btn.style.cssText = [
-    'display:block', 'width:100%', 'margin-top:10px', 'padding:13px 16px',
-    `background:${bg}`, 'color:#fff', 'border:none', 'border-radius:6px',
-    'font-size:14px', 'font-weight:700', 'cursor:pointer',
-    'transition:background 0.18s',
-  ].join(';');
-  btn.onmouseover = () => btn.style.filter = 'brightness(1.15)';
-  btn.onmouseout = () => btn.style.filter = '';
-  btn.onclick = onClick;
+  
+  // CLONE classes from the provided sibling button for 100% identical styling
+  if (siblingButton) {
+    btn.className = siblingButton.className;
+    // Ensure it's a secondary style (grey/blue) to avoid clashing with the primary green "New Game"
+    btn.classList.remove('ui_v5-button-primary', 'cc-button-primary');
+    btn.classList.add('ui_v5-button-secondary', 'cc-button-secondary'); // Add secondary if not present
+  } else {
+    // Fallback classes if no sibling was found (should be rare with this new approach)
+    btn.className = 'ui_v5-button-component ui_v5-button-secondary ui_v5-button-full cc-button-component cc-button-secondary cc-button-full';
+  }
+
+  btn.innerHTML = `<span class="ui_v5-button-content-wrapper"><span class="ui_v5-button-text">${label}</span></span>`;
+  
+  // Minimal styles to ensure layout, relying on cloned classes for sizing where possible
+  btn.style.cssText = `
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    min-height: 48px !important; /* Ensure it has a decent height */
+    cursor: pointer !important;
+    margin-top: 8px !important; /* Add some separation from previous button */
+    /* No explicit width, background-color, color, or margin-bottom - rely on cloned classes */
+  `;
+
+  btn.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openLichessAnalysis();
+  };
+  
   return btn;
 }
 
 // ── MutationObserver ─────────────────────────────────────────────────────────
-const observer = new MutationObserver(() => {
+const observer = new MutationObserver((mutations) => {
   if (buttonInjected) return;
+  
   clearTimeout(debounce);
   debounce = setTimeout(() => {
-    if (!isGameOver()) return;
+    const gameOver = isGameOver();
+    if (!gameOver) return;
+
+    log('Game Over detected, checking storage status and attempting injection...');
+    
     chrome.storage.local.get(['active'], ({ active }) => {
-      if (active === false) return;
+      if (active === false) {
+        log('Extension is disabled in popup, skipping injection');
+        return;
+      }
       injectButtons();
     });
-  }, 300);
+  }, 500);
 });
 
 function startObserver() {
+  log('Starting MutationObserver');
   observer.observe(document.body, { childList: true, subtree: true });
 }
 startObserver();
@@ -165,9 +247,11 @@ startObserver();
 // ── SPA Navigation Reset ─────────────────────────────────────────────────────
 setInterval(() => {
   if (location.href === lastUrl) return;
+  log('URL changed, resetting injection state', { from: lastUrl, to: location.href });
   lastUrl = location.href;
   ['sfctplay-btn', 'sfctplay-banner'].forEach(id => document.getElementById(id)?.remove());
   buttonInjected = false;
   analyzing = false;
   startObserver();
 }, 1000);
+
