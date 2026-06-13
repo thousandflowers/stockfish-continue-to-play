@@ -25,32 +25,72 @@ function tryAutoStart() {
     (data) => {
       if (!data.sfct_autoStart) {
         log('No auto-start flag found.');
-        autoStartAttempted = false; // allow retry
+        autoStartAttempted = false;
         return;
       }
 
       const level = data.sfct_level || 4;
       const color = data.sfct_color || 'white';
       const fen = data.sfct_fen;
-      
-      // Clean up all auto-start storage keys
+
       chrome.storage.local.remove([
         'sfct_autoStart', 'sfct_timestamp', 'sfct_fen',
         'sfct_level', 'sfct_color', 'sfct_uciElo'
       ]);
-      
-      log('Auto-starting vs computer:', { level, color, fen: fen ? fen.slice(0, 30) + '…' : null });
+
+      log('Auto-start: navigating to /setup/ai', { level, color, fen: fen ? fen.slice(0, 30) + '…' : null });
 
       if (fen) {
-        // PRIMARY PATH: Direct form POST to /setup/ai — reliable, no DOM dependency
-        submitAIForm(level, color, fen);
+        window.location.href = `/setup/ai?fen=${encodeURIComponent(fen)}&color=${color}`;
       } else {
-        // FALLBACK: click-through UI for cases without FEN
-        log('No FEN in storage, falling back to click-through UI.');
+        log('No FEN, falling back to click-through UI.');
         clickThroughEditorUI(level, color);
       }
     }
   );
+}
+
+let setupFormSubmitted = false;
+
+function autoSubmitSetupForm() {
+  if (setupFormSubmitted) return;
+  const params = new URLSearchParams(location.search);
+  const fen = params.get('fen');
+  if (!fen) { log('autoSubmitSetupForm: no fen param, skipping'); return; }
+  setupFormSubmitted = true;
+
+  log('Auto-submitting /setup/ai form (native, CSRF included)');
+
+  const waitAndSubmit = (attempt = 0) => {
+    const form = document.querySelector('form[action="/setup/ai"]');
+    if (!form) {
+      if (attempt < 15) { setTimeout(() => waitAndSubmit(attempt + 1), 300); return; }
+      warn('autoSubmitSetupForm: form not found after retries');
+      return;
+    }
+
+    const level = params.get('level') || '4';
+    const color = params.get('color') || 'white';
+
+    const levelInput = form.querySelector('input[name="level"]');
+    if (levelInput) {
+      levelInput.value = level;
+      levelInput.dispatchEvent(new Event('input', { bubbles: true }));
+      levelInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    const colorInput = form.querySelector('select[name="color"], input[name="color"]');
+    if (colorInput) {
+      colorInput.value = color;
+      colorInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    const btn = form.querySelector('button[type="submit"]');
+    if (btn) { btn.click(); log('autoSubmitSetupForm: clicked Play'); }
+    else { form.submit(); log('autoSubmitSetupForm: called form.submit()'); }
+  };
+
+  waitAndSubmit();
 }
 
 function clickThroughEditorUI(level, color) {
@@ -212,50 +252,12 @@ function clickThroughEditorUI(level, color) {
   setTimeout(step1, 1200); // Initial delay for page to load
 }
 
-async function submitAIForm(level, color, fen, retries = 3) {
-  const fenVal = fen !== undefined ? fen : await new Promise(resolve => {
-    chrome.storage.local.get(['sfct_fen'], ({ sfct_fen }) => resolve(sfct_fen));
-  });
-  if (!fenVal) { warn('submitAIForm: no FEN available'); return; }
-
-  const body = new URLSearchParams({
-    'variant': '2',
-    'fenVariant': fenVal,
-    'fen': fenVal,
-    'level': String(level),
-    'color': color,
-    'timeMode': '1',
-    'time': '10',
-    'increment': '5',
-    'days': '2',
-  });
-
-  const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-
-  log('Submitting /setup/ai via fetch:', Object.fromEntries(body), 'CSRF:', csrf ? '✓' : '✗');
-
-  for (let attempt = 0; attempt < retries; attempt++) {
-    try {
-      const res = await fetch('/setup/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...(csrf && { 'X-CSRF-Token': csrf }) },
-        body,
-        credentials: 'same-origin',
-        redirect: 'follow',
-      });
-
-      if (res.ok && res.url) {
-        window.location.href = res.url;
-        return;
-      }
-      warn('Attempt', attempt + 1, 'failed:', res.status, await res.text().catch(() => '(no body)'));
-    } catch (e) {
-      warn('Attempt', attempt + 1, 'fetch error:', e);
-    }
-    if (attempt < retries - 1) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+async function submitAIForm(level, color, fen) {
+  if (fen) {
+    window.location.href = `/setup/ai?fen=${encodeURIComponent(fen)}&color=${color}&level=${level}`;
+  } else {
+    window.location.href = `/setup/ai?color=${color}&level=${level}`;
   }
-
-  warn('fetch() exhausted retries');
 }
 
 
@@ -350,28 +352,11 @@ function injectButton() {
   btn.onclick = () => {
     const fen = extractFENfromLichessBoard();
     const color = document.querySelector('.cg-wrap')?.classList.contains('orientation-black') ? 'black' : 'white';
-    log('Button clicked, preparing redirection...', { fen, color });
-    if (fen) {
-      chrome.storage.local.set({
-        sfct_autoStart: true,
-        sfct_level: 4,
-        sfct_fen: fen,
-        sfct_color: color,
-        sfct_timestamp: Date.now()
-      }, () => {
-        window.location.href = `/editor/${encodeURIComponent(fen)}?color=${color}`;
-      });
-    } else {
-      warn('Could not extract FEN from board, trying directly to editor');
-      chrome.storage.local.set({
-        sfct_autoStart: true,
-        sfct_level: 4,
-        sfct_color: color,
-        sfct_timestamp: Date.now()
-      }, () => {
-        window.location.href = '/editor?color=' + color;
-      });
-    }
+    log('Button clicked', { fen, color });
+    const url = fen
+      ? `/setup/ai?fen=${encodeURIComponent(fen)}&color=${color}&level=4`
+      : `/setup/ai?color=${color}&level=4`;
+    window.location.href = url;
   };
 
   (container || document.body).appendChild(btn);
@@ -379,60 +364,36 @@ function injectButton() {
   buttonInjected = true;
 }
 
-let tryAutoStartDebounce = null; // New debounce variable for tryAutoStart
+let tryAutoStartDebounce = null;
 
 const observer = new MutationObserver((mutations) => {
-  log('MutationObserver triggered on Lichess. Checking auto-start conditions...');
-  log('Current Lichess URL:', location.href);
-    const isEditorPage = (location.pathname.startsWith('/editor') || location.href.includes('/?fen=')) || document.querySelector('.setup__main') !== null;
-  const isLichessHomepage = location.href === 'https://lichess.org/' || location.href === 'https://lichess.org';
+  log('MutationObserver triggered. URL:', location.pathname);
 
-  log('isEditorPage condition result:', isEditorPage);
-  log('isLichessHomepage condition result:', isLichessHomepage);
-
-  // --- Handle Lichess Homepage redirect first ---
-  // If we land on the Lichess homepage and have auto-start data, redirect to the editor page
-  if (isLichessHomepage && !autoStartAttempted) { // Only attempt redirect once
-    chrome.storage.local.get(['sfct_autoStart', 'sfct_fen', 'sfct_color'], (data) => {
-      if (data.sfct_autoStart && data.sfct_fen) {
-        log('Lichess homepage detected with auto-start data. Redirecting to editor page...');
-        // Construct the correct editor URL
-        const editorUrl = `https://lichess.org/editor/${encodeURIComponent(data.sfct_fen)}?color=${data.sfct_color}`;
-        // Clear auto-start flag immediately before redirect
-        chrome.storage.local.remove(['sfct_autoStart', 'sfct_timestamp']); // Also remove timestamp here
-        window.location.href = editorUrl; // Redirect
-        autoStartAttempted = true; // Mark as attempted to prevent loop
-        return; // Stop further processing for this mutation
-      }
-    });
+  // ── /setup/ai page: auto-submit the native form (CSRF included) ──────────
+  if (location.pathname === '/setup/ai') {
+    autoSubmitSetupForm();
+    return;
   }
 
-  // --- Handle Auto-start on the actual Editor Page ---
+  // ── Editor page: read storage and redirect to /setup/ai ──────────────────
+  const isEditorPage = location.pathname.startsWith('/editor')
+    || location.href.includes('/?fen=')
+    || !!document.querySelector('.setup__main');
+
   if (isEditorPage) {
-    if (!autoStartAttempted) { // Only schedule if not already attempted
-      log('Lichess editor page detected via MutationObserver, scheduling tryAutoStart...');
-
-      // We need a separate debounce for tryAutoStart to prevent rapid re-scheduling
+    if (!autoStartAttempted) {
       if (!tryAutoStartDebounce) {
-          tryAutoStartDebounce = setTimeout(() => {
-              tryAutoStart();
-              tryAutoStartDebounce = null; // Reset after execution
-          }, 500);
-      } else {
-          log('tryAutoStart already scheduled, skipping re-scheduling.');
+        tryAutoStartDebounce = setTimeout(() => { tryAutoStart(); tryAutoStartDebounce = null; }, 500);
       }
-    } else {
-      log('tryAutoStart already attempted and completed. Skipping re-check.');
     }
+    return;
   }
 
-  // Existing logic for injectButton (Lichess game-over)
-  // This part should only run if the auto-start isn't active or fails
-  // and we are NOT on the editor page
-  if (buttonInjected || isEditorPage || gameOverDetected) return; // Don't inject "Continue vs Computer" on editor page
+  // ── Game-over detection on standard Lichess pages ─────────────────────────
+  if (buttonInjected || gameOverDetected) return;
   if (isGameOver()) {
     gameOverDetected = true;
-    log('Game Over detected on Lichess, checking storage...');
+    log('Game Over detected');
     chrome.storage.local.get(['active'], ({ active }) => {
       if (active !== false) injectButton();
     });
