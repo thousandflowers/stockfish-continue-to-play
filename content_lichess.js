@@ -220,6 +220,7 @@ function submitAIForm(level, color, fen) {
     const fields = {
       'variant': '1',
       'fenVariant': fenVal || '',
+      'fen': fenVal || '',
       'level': String(level),
       'color': color,
       'timeMode': '1',
@@ -252,7 +253,7 @@ function submitAIForm(level, color, fen) {
 
 // ── Standard game end detection (when playing on Lichess) ──────────────────
 let buttonInjected = false;
-let debounce = null;
+let gameOverDetected = false;
 
 // isGameOver() defined in lib/lichess-utils.js
 
@@ -335,15 +336,13 @@ const observer = new MutationObserver((mutations) => {
   if (isEditorPage) {
     if (!autoStartAttempted) { // Only schedule if not already attempted
       log('Lichess editor page detected via MutationObserver, scheduling tryAutoStart...');
-      // Clear any existing debounce for injectButton, as auto-start is primary
-      clearTimeout(debounce); // debounce is still used for injectButton logic
 
       // We need a separate debounce for tryAutoStart to prevent rapid re-scheduling
       if (!tryAutoStartDebounce) {
           tryAutoStartDebounce = setTimeout(() => {
               tryAutoStart();
               tryAutoStartDebounce = null; // Reset after execution
-          }, 1500);
+          }, 500);
       } else {
           log('tryAutoStart already scheduled, skipping re-scheduling.');
       }
@@ -355,15 +354,14 @@ const observer = new MutationObserver((mutations) => {
   // Existing logic for injectButton (Lichess game-over)
   // This part should only run if the auto-start isn't active or fails
   // and we are NOT on the editor page
-  if (buttonInjected || isEditorPage) return; // Don't inject "Continue vs Computer" on editor page
-  clearTimeout(debounce);
-  debounce = setTimeout(() => {
-    if (!isGameOver()) return;
+  if (buttonInjected || isEditorPage || gameOverDetected) return; // Don't inject "Continue vs Computer" on editor page
+  if (isGameOver()) {
+    gameOverDetected = true;
     log('Game Over detected on Lichess, checking storage...');
     chrome.storage.local.get(['active'], ({ active }) => {
       if (active !== false) injectButton();
     });
-  }, 100);
+  }
 });
 
 log('Starting MutationObserver on Lichess');
