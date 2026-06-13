@@ -212,41 +212,68 @@ function clickThroughEditorUI(level, color) {
   setTimeout(step1, 1200); // Initial delay for page to load
 }
 
-function submitAIForm(level, color, fen) {
-  const resolveFen = (fenVal) => {
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = '/setup/ai';
-    const fields = {
-      'variant': fenVal ? '2' : '1',
-      'fenVariant': fenVal || '',
-      'fen': fenVal || '',
-      'level': String(level),
-      'color': color,
-      'timeMode': '1',
-      'time': '10',
-      'increment': '5',
-      'days': '2',
-    };
-    for (const [name, value] of Object.entries(fields)) {
-      const input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = name;
-      input.value = value;
-      form.appendChild(input);
-    }
-    document.body.appendChild(form);
-    log('Submitting /setup/ai form:', fields);
-    form.submit();
-  };
+async function submitAIForm(level, color, fen, retries = 3) {
+  const fenVal = fen !== undefined ? fen : await new Promise(resolve => {
+    chrome.storage.local.get(['sfct_fen'], ({ sfct_fen }) => resolve(sfct_fen));
+  });
+  if (!fenVal) { warn('submitAIForm: no FEN available'); return; }
 
-  if (fen !== undefined) {
-    resolveFen(fen);
-  } else {
-    chrome.storage.local.get(['sfct_fen'], ({ sfct_fen }) => {
-      resolveFen(sfct_fen);
-    });
+  const body = new URLSearchParams({
+    'variant': '2',
+    'fen': fenVal,
+    'level': String(level),
+    'color': color,
+    'timeMode': '1',
+    'time': '10',
+    'increment': '5',
+    'days': '2',
+  });
+
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+  log('Submitting /setup/ai via fetch:', Object.fromEntries(body), 'CSRF:', csrf ? '✓' : '✗');
+
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const res = await fetch('/setup/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...(csrf && { 'X-CSRF-Token': csrf }) },
+        body,
+        credentials: 'same-origin',
+        redirect: 'manual',
+      });
+
+      if (res.type === 'opaqueredirect' || res.status === 302 || res.status === 303) {
+        const loc = res.headers.get('Location');
+        if (loc) { window.location.href = loc.startsWith('http') ? loc : 'https://lichess.org' + loc; return; }
+      }
+      if (res.ok) {
+        if (res.url && res.url !== location.href && !res.url.includes('/setup/ai')) {
+          window.location.href = res.url; return;
+        }
+        log('fetch OK, navigating to response URL:', res.url);
+        if (res.url) window.location.href = res.url;
+        else location.reload();
+        return;
+      }
+      warn('Attempt', attempt + 1, 'failed:', res.status, await res.text().catch(() => '(no body)'));
+    } catch (e) {
+      warn('Attempt', attempt + 1, 'fetch error:', e);
+    }
+    if (attempt < retries - 1) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
   }
+
+  // FALLBACK: create real form and submit
+  warn('fetch() exhausted retries, falling back to form.submit()');
+  const fallback = document.createElement('form');
+  fallback.method = 'POST'; fallback.action = '/setup/ai';
+  for (const [name, value] of Object.entries(Object.fromEntries(body))) {
+    const inpt = document.createElement('input');
+    inpt.type = 'hidden'; inpt.name = name; inpt.value = value;
+    fallback.appendChild(inpt);
+  }
+  document.body.appendChild(fallback);
+  fallback.submit();
 }
 
 
