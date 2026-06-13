@@ -220,6 +220,7 @@ async function submitAIForm(level, color, fen, retries = 3) {
 
   const body = new URLSearchParams({
     'variant': '2',
+    'fenVariant': fenVal,
     'fen': fenVal,
     'level': String(level),
     'color': color,
@@ -240,20 +241,11 @@ async function submitAIForm(level, color, fen, retries = 3) {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...(csrf && { 'X-CSRF-Token': csrf }) },
         body,
         credentials: 'same-origin',
-        redirect: 'manual',
+        redirect: 'follow',
       });
 
-      if (res.type === 'opaqueredirect' || res.status === 302 || res.status === 303) {
-        const loc = res.headers.get('Location');
-        if (loc) { window.location.href = loc.startsWith('http') ? loc : 'https://lichess.org' + loc; return; }
-      }
-      if (res.ok) {
-        if (res.url && res.url !== location.href && !res.url.includes('/setup/ai')) {
-          window.location.href = res.url; return;
-        }
-        log('fetch OK, navigating to response URL:', res.url);
-        if (res.url) window.location.href = res.url;
-        else location.reload();
+      if (res.ok && res.url) {
+        window.location.href = res.url;
         return;
       }
       warn('Attempt', attempt + 1, 'failed:', res.status, await res.text().catch(() => '(no body)'));
@@ -263,17 +255,7 @@ async function submitAIForm(level, color, fen, retries = 3) {
     if (attempt < retries - 1) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
   }
 
-  // FALLBACK: create real form and submit
-  warn('fetch() exhausted retries, falling back to form.submit()');
-  const fallback = document.createElement('form');
-  fallback.method = 'POST'; fallback.action = '/setup/ai';
-  for (const [name, value] of Object.entries(Object.fromEntries(body))) {
-    const inpt = document.createElement('input');
-    inpt.type = 'hidden'; inpt.name = name; inpt.value = value;
-    fallback.appendChild(inpt);
-  }
-  document.body.appendChild(fallback);
-  fallback.submit();
+  warn('fetch() exhausted retries');
 }
 
 
@@ -283,6 +265,63 @@ let buttonInjected = false;
 let gameOverDetected = false;
 
 // isGameOver() defined in lib/lichess-utils.js
+
+function extractFENfromLichessBoard() {
+  const wrap = document.querySelector('.cg-wrap');
+  if (wrap) {
+    const state = wrap.getAttribute('data-state');
+    if (state && state.includes('/')) return state.split(' ')[0] + ' w - - 0 1';
+  }
+
+  const input = document.querySelector('input[value*="/"]');
+  if (input) return input.value;
+
+  const round = document.querySelector('.round, .round__app, main.round');
+  if (round) {
+    const fen = round.getAttribute('data-fen');
+    if (fen) return fen;
+  }
+
+  for (const sel of ['.pgn', '[data-pgn]', '.game__pgn', '.analyse__pgn']) {
+    const el = document.querySelector(sel);
+    if (el) {
+      const m = el.textContent.match(/((?:[rnbqkpRNBQKP1-8]+\/){7}[rnbqkpRNBQKP1-8]+ [bw] (?:K?Q?k?q?|-) (?:[a-h][1-8]|-) \d+ \d+)/);
+      if (m) return m[1];
+    }
+  }
+
+  if (wrap) {
+    const pieces = wrap.querySelectorAll('piece');
+    if (pieces.length > 0) {
+      const board = Array.from({ length: 8 }, () => Array(8).fill(''));
+      pieces.forEach(p => {
+        const sq = p.getAttribute('data-square') || '';
+        if (!sq || sq.length < 2) return;
+        const col = sq.charCodeAt(0) - 97;
+        const row = 8 - parseInt(sq[1]);
+        if (col < 0 || col > 7 || row < 0 || row > 7) return;
+        const type = p.getAttribute('data-role') || '';
+        if (!type) return;
+        const isW = p.getAttribute('data-color') === 'white' || p.classList.contains('white');
+        const pieceChar = isW ? type[0].toUpperCase() : type[0].toLowerCase();
+        board[row][col] = pieceChar;
+      });
+      let fen = '';
+      for (let r = 0; r < 8; r++) {
+        let empty = 0;
+        for (let c = 0; c < 8; c++) {
+          if (board[r][c]) { if (empty) { fen += empty; empty = 0; } fen += board[r][c]; }
+          else empty++;
+        }
+        if (empty) fen += empty;
+        if (r < 7) fen += '/';
+      }
+      return fen + ' w - - 0 1';
+    }
+  }
+
+  return null;
+}
 
 function injectButton() {
   if (document.getElementById('sfctplay-btn') || buttonInjected) return;
@@ -309,9 +348,8 @@ function injectButton() {
   btn.onmouseover = () => btn.style.background = '#8aab00';
   btn.onmouseout = () => btn.style.background = '#759900';
   btn.onclick = () => {
-    const fenInput = document.querySelector('input[value*="/"]');
-    const fen = fenInput?.value || null;
-    const color = document.querySelector('.cg-wrap').classList.contains('orientation-black') ? 'black' : 'white';
+    const fen = extractFENfromLichessBoard();
+    const color = document.querySelector('.cg-wrap')?.classList.contains('orientation-black') ? 'black' : 'white';
     log('Button clicked, preparing redirection...', { fen, color });
     if (fen) {
       chrome.storage.local.set({
@@ -322,6 +360,16 @@ function injectButton() {
         sfct_timestamp: Date.now()
       }, () => {
         window.location.href = `/editor/${encodeURIComponent(fen)}?color=${color}`;
+      });
+    } else {
+      warn('Could not extract FEN from board, trying directly to editor');
+      chrome.storage.local.set({
+        sfct_autoStart: true,
+        sfct_level: 4,
+        sfct_color: color,
+        sfct_timestamp: Date.now()
+      }, () => {
+        window.location.href = '/editor?color=' + color;
       });
     }
   };
