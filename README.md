@@ -16,6 +16,12 @@ This extension intercepts the game-over screen on Chess.com or Lichess, extracts
 
 ---
 
+## Why I built this
+
+In fast games — bullet, blitz — opponents resign or disconnect all the time, often in positions where the most interesting part is still ahead. I wanted to keep playing from exactly where we left off, without setting anything up.
+
+---
+
 ## Flow
 
 ```
@@ -68,6 +74,17 @@ cp manifest-firefox.json manifest.json
 Or use the `manifest-firefox.json` file directly when packaging for Firefox Add-ons.
 
 The extension is **not yet published** on the Chrome Web Store or Firefox Add-ons. Install from source using the instructions above.
+
+---
+
+## Roadmap
+
+| | Status |
+|---|:---:|
+| Lichess support (full) | ✅ |
+| Chess.com support (full) | 🔧 in progress |
+| Chrome Web Store release | ◻︎ planned |
+| Firefox Add-ons release | ◻︎ planned |
 
 ---
 
