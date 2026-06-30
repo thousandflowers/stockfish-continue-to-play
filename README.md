@@ -1,73 +1,77 @@
 # ♟️ Stockfish Continue to Play
 
-**Browser extension for Chess.com & Lichess — after your opponent resigns, disconnects, or times out, continue the game vs Stockfish.**
+**Browser extension for Chess.com — when a game ends, keep playing the final position vs Stockfish on the same board. One click.**
 
-[![Chrome](https://img.shields.io/badge/Chrome-MV3-4285F4?logo=googlechrome&logoColor=white)](https://github.com/thousandflowers/stockfish-continue-to-play#installation)
-[![Firefox](https://img.shields.io/badge/Firefox-MV3-FF7139?logo=firefoxbrowser&logoColor=white)](https://github.com/thousandflowers/stockfish-continue-to-play#firefox)
+[![Chrome](https://img.shields.io/badge/Chrome-MV3-4285F4?logo=googlechrome&logoColor=white)](#installation)
+[![Firefox](https://img.shields.io/badge/Firefox-MV3-FF7139?logo=firefoxbrowser&logoColor=white)](#firefox)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 
 ---
 
-## The Problem
+## The problem
 
-You're winning. Your opponent resigns. Game over — but you wanted to play it through.
-
-This extension intercepts the game-over screen on Chess.com or Lichess, extracts the final board position (FEN), and loads it on Lichess against Stockfish — with difficulty automatically matched to your opponent's Elo. **No setup. One click.**
-
----
-
-## Flow
+You're winning. Your opponent resigns, disconnects, or times out. Game over — but you
+wanted to play it through. This extension adds a **Continue vs Computer** button to the
+game-over screen. Click it and you keep playing the exact final position against
+Stockfish, right there on the Chess.com board, with difficulty matched to your
+opponent's rating.
 
 ```
-Chess.com: Game Over → [🔗 Continue on Lichess] → click
-       ↓
-Lichess: /editor with your position → Stockfish (adaptive level)
-       ↓
-Play!
+Chess.com: Game Over  →  [♟ Continue vs Computer]  →  play the position vs Stockfish (inline)
 ```
 
 ---
 
 ## Features
 
-- **Chess.com + Lichess support** — captures final position on both platforms
-- **Adaptive difficulty** — Stockfish auto-calibrates to opponent Elo via 9-strategy detection cascade
-- **No backend** — Stockfish runs in WASM inside the browser. 0 servers, 0 KB sent
-- **Zero configuration** — install and play
-- **On/Off toggle** — popup to disable when not needed
-- **Open source** — no tracking, no telemetry
+- **Inline on the real board** — no redirect, no new tab; you keep playing on the Chess.com board you were already on.
+- **Adaptive difficulty** — Stockfish's `UCI_Elo` is matched to the opponent's rating read from the page.
+- **No servers, no telemetry** — Stockfish runs entirely in your browser via WebAssembly. Nothing is uploaded.
+- **Click or drag** — move pieces either way; legal destinations are highlighted; promotions auto-queen.
+- **Correct chess** — castling, en-passant, checkmate/stalemate and repetition are handled by the engine itself (moves are replayed to Stockfish).
+- **On/off toggle** — a popup to disable it when you don't want it.
+- **Open source** — MIT.
 
 ---
 
 ## Installation
 
 ```bash
-# Clone
+# 1. Clone
 git clone https://github.com/thousandflowers/stockfish-continue-to-play.git
 cd stockfish-continue-to-play
 
-# Download Stockfish WASM binary (~10 MB)
+# 2. Download the Stockfish engine (~10 MB, kept out of git, checksum-verified)
 bash scripts/download-stockfish.sh
 
-# Chrome: chrome://extensions → Developer mode → Load unpacked
-# Firefox: about:debugging#/runtime/this-firefox → Load Temporary Add-on
+# 3a. Chrome / Edge / Brave / Arc / Opera
+#     chrome://extensions → enable "Developer mode" → "Load unpacked" → pick this folder
 ```
 
-> `stockfish.js` (~10 MB) is excluded from git. The [download script](scripts/download-stockfish.sh) fetches it from the latest release. Or install Git LFS (`git lfs pull`) before loading.
+> `stockfish.js` (~10 MB) is excluded from git to keep clones lean. The
+> [download script](scripts/download-stockfish.sh) fetches it and verifies it against
+> the pinned checksum in `stockfish.js.sha256`.
 
 ### Firefox
 
-Firefox 128+ supports the same MV3 manifest with minor differences. Load with:
+Firefox 128+ uses a separate manifest. Swap it in, then load the folder as a temporary
+add-on:
 
 ```bash
-# Copy the Firefox manifest over the default
 cp manifest-firefox.json manifest.json
-# Then load in about:debugging#/runtime/this-firefox
+# about:debugging#/runtime/this-firefox → "Load Temporary Add-on" → pick manifest.json
 ```
 
-Or use the `manifest-firefox.json` file directly when packaging for Firefox Add-ons.
+The extension is **not yet published** on the Chrome Web Store or Firefox Add-ons —
+install from source as above.
 
-The extension is **not yet published** on the Chrome Web Store or Firefox Add-ons. Install from source using the instructions above.
+---
+
+## How to use
+
+1. Finish (or lose/win) a game on Chess.com.
+2. On the game-over screen, click **♟ Continue vs Computer**.
+3. Play. The badge in the top-right shows whose turn it is; click it to stop.
 
 ---
 
@@ -77,7 +81,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local dev setup, testing, and PR guid
 
 ## Architecture
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for technical details on difficulty mapping, FEN extraction (5 fallbacks), Elo detection (9 strategies), project structure, and browser porting.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the FEN extraction, the move-history engine
+model, difficulty mapping, and project structure.
 
 ---
 

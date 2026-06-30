@@ -1,51 +1,57 @@
 # Contributing
 
-Thanks for wanting to improve Stockfish Continue to Play!
+Thanks for helping out! This is a small, dependency-light browser extension.
 
-## Local dev
-
-1. Clone → `chrome://extensions` → Developer mode → Load unpacked extension
-2. Edit → Refresh extension → Test on Chess.com / Lichess
-3. For debug logs: open `content_chesscom.js` / `content_lichess.js`, set `DEBUG = true`
-
-### Running tests
+## Local setup
 
 ```bash
-npm install
-npm test        # 95 tests across chess + lichess utils + fixtures
-npm run test:watch  # dev mode
+git clone https://github.com/thousandflowers/stockfish-continue-to-play.git
+cd stockfish-continue-to-play
+npm install                      # vitest + jsdom (dev only)
+bash scripts/download-stockfish.sh   # fetch the engine (~10 MB, git-ignored)
 ```
 
-Tests use **the same `lib/*-utils.js` files** the extension loads — no mocked copies, no bundler shims. Snapshot E2E tests (`tests/fixtures.test.js`) load realistic HTML pages and verify the full extraction pipeline.
+Load it unpacked:
 
-## Pull request
+- **Chrome:** `chrome://extensions` → Developer mode → Load unpacked → pick the folder.
+- **Firefox:** `cp manifest-firefox.json manifest.json`, then `about:debugging#/runtime/this-firefox` → Load Temporary Add-on.
 
-- One change per PR
-- `npm test` must pass (CI will check)
-- Manually test the change on Chess.com and Lichess before opening
-- Mention if the change affects UI, FEN, or Elo detection
+After editing files, hit the reload icon on the extension card and refresh the Chess.com tab.
 
-## File structure
+## Layout
 
-| File | Role |
-|------|------|
-| `lib/chess-utils.js` | Pure DOM functions for Chess.com (FEN, Elo, turn, color, game-over, UCI_Elo mapping) |
-| `lib/lichess-utils.js` | Pure DOM functions for Lichess (editor form, selectors, game-over) |
-| `tests/chess-utils.test.js` | 54 tests — every Elo strategy, FEN fallback, and mapping |
-| `tests/lichess-utils.test.js` | 22 tests — editor auto-start, selectors, form builders |
-| `tests/fixtures.test.js` | 19 snapshot E2E tests against realistic HTML pages |
-| `tests/fixtures/` | HTML fixture files (Chess.com game-over, Lichess editor, etc.) |
-| `content_chesscom.js` | Game-over detection + button injection on Chess.com |
-| `content_lichess.js` | Auto-start on Lichess /editor + game-over detection |
-| `stockfish.js` | Stockfish WASM (~10 MB) |
-| `service-worker.js` | MV3 service worker (install handler) |
-| `popup.html` / `popup.js` | Popup on/off toggle |
-| `package.json` / `vitest.config.js` | Test runner (vitest + jsdom) |
-| `manifest-firefox.json` | Firefox MV3 manifest (alternative to manifest.json) |
+See [ARCHITECTURE.md](ARCHITECTURE.md). In short:
 
-## Notes
+- `lib/chess-core.js` — pure chess logic, no DOM. Unit-tested directly.
+- `lib/chess-dom.js` — Chess.com DOM scraping. Tested under jsdom with HTML fixtures.
+- `content_chesscom.js` — orchestration (engine worker, rendering, input, lifecycle).
 
-- Stockfish runs in an isolated Web Worker
-- FEN is extracted with **5 fallback methods** (attribute, React state, light DOM, shadow DOM, window state)
-- Elo is detected with **9 fallback strategies**, logged as `[elo:1]`–`[elo:9]`
-- Lichess level is auto-calibrated to opponent Elo
+Keep pure logic in `lib/` so it stays testable; keep DOM/engine wiring in the content
+script.
+
+## Testing
+
+```bash
+npm test            # run once
+npm run test:watch  # watch mode
+```
+
+- Add pure-logic cases to `tests/chess-core.test.js`.
+- Add scraping cases to `tests/chess-dom.test.js`; for new DOM shapes, drop a realistic
+  page snapshot in `tests/fixtures/`.
+- All tests must pass before a PR (CI runs `npm test` on push/PR).
+
+## Conventions
+
+- Match the existing style: small functions, early returns, named constants over magic
+  numbers, immutable updates.
+- No `console.log` in shipped paths — the content script logs only behind `DEBUG`
+  (default `false`).
+- Conventional commit messages (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`).
+- Update `README.md` / `ARCHITECTURE.md` when behaviour or layout changes.
+
+## A note on Chess.com selectors
+
+Chess.com ships DOM changes regularly. FEN/colour/rating extraction in `lib/chess-dom.js`
+uses a fallback cascade for resilience; if extraction breaks, add a new fallback and a
+fixture that captures the new markup rather than replacing the existing ones.

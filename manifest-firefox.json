@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Stockfish Continue to Play",
-  "version": "2.0",
-  "description": "After your opponent resigns, disconnects, or times out on Chess.com, continue the game vs Stockfish on Lichess. One click, automatic.",
+  "version": "3.0.0",
+  "description": "After a game ends on Chess.com, continue the position vs Stockfish AI on the same page. One click, automatic.",
   "browser_specific_settings": {
     "gecko": {
       "id": "{a1b2c3d4-e5f6-7890-abcd-ef1234567890}",
@@ -13,8 +13,7 @@
     "storage"
   ],
   "host_permissions": [
-    "*://*.chess.com/*",
-    "*://*.lichess.org/*"
+    "*://*.chess.com/*"
   ],
   "background": {
     "scripts": ["service-worker.js"]
@@ -40,19 +39,14 @@
         "*://*.chess.com/game/*",
         "*://*.chess.com/play/*"
       ],
-      "js": ["lib/chess-utils.js", "content_chesscom.js"],
-      "run_at": "document_end"
-    },
-    {
-      "matches": ["*://*.lichess.org/*"],
-      "js": ["lib/lichess-utils.js", "content_lichess.js"],
+      "js": ["lib/chess-core.js", "lib/chess-dom.js", "content_chesscom.js"],
       "run_at": "document_end"
     }
   ],
   "web_accessible_resources": [
     {
       "resources": ["stockfish.js"],
-      "matches": ["*://*.chess.com/*", "*://*.lichess.org/*"]
+      "matches": ["*://*.chess.com/*"]
     }
   ],
   "content_security_policy": {

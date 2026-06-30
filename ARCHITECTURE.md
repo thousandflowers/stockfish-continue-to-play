@@ -1,123 +1,88 @@
 # Architecture
 
-## How It Works
+## How it works
 
-1. **Chess.com** — Content script detects the Game Over screen, injects a "Continue on Lichess" button
-2. **FEN extraction** — Reads the position from the DOM with 5 fallback methods (attributes, React internal state, light DOM pieces, shadow DOM, window state)
-3. **Elo detection** — Reads opponent rating with 9 fallback strategies (CSS selectors, data attributes, React state, preloaded data)
-4. **Open Lichess** — Saves FEN + level + UCI_Elo to storage and opens `/editor` on Lichess
-5. **Auto-start** — Content script on Lichess reads storage, sets level and color, clicks "vs Computer" automatically
+1. **Detect game over** — a content script on Chess.com watches for the game-over modal and injects a **Continue vs Computer** button next to Rematch / New Game.
+2. **Capture the position** — on click it reads the final FEN and the player's colour from the page, and the opponent's rating to pick a difficulty.
+3. **Play inline** — it hides the game-over modal and renders the position on the existing Chess.com board. Stockfish runs in a Web Worker; you move by click or drag, the engine replies.
 
-Logic shared between platforms lives in `lib/chess-utils.js` and `lib/lichess-utils.js` — pure DOM functions tested independently from the extension runtime. **95 tests** cover all extraction paths, including snapshot tests against realistic HTML fixtures.
+There is no redirect and no backend: Stockfish (WebAssembly) runs in your browser and nothing is uploaded.
 
-The Stockfish engine (compiled to WASM) runs in an isolated Web Worker — communication via UCI protocol over `postMessage`.
+## Engine model: replay the move history
 
----
+Rather than rebuilding a full FEN after each move (which is error-prone for castling
+rights, en-passant and clocks), the content script keeps the captured **start FEN** plus
+a list of **UCI moves** and sends:
 
-## Difficulty Mapping
+```
+position fen <startFen> moves <m1> <m2> …
+```
 
-The extension reads your opponent's rating from the DOM using **9 independent strategies** (primary selectors, data attributes, React internal state, preloaded window state, and CSS wildcard patterns). Each strategy is logged as `[elo:1]`–`[elo:9]` so you can immediately identify which selector works — or which broke after a Chess.com update.
+Stockfish then tracks castling rights, en-passant, the 50-move rule and threefold
+repetition natively. Legal moves for the side to move are obtained from the engine with
+`go perft 1`; when that returns zero moves the game has ended (checkmate or stalemate)
+and the overlay closes with a result banner. A local board map is kept only for
+rendering and is updated immutably (`applyUciMove` returns a new board).
 
-Once extracted, the Elo is mapped to two difficulty systems:
+## Difficulty mapping
 
-| Output | Range | Type |
-|:---|:---:|:---|
-| Lichess AI Level | 1–8 | Discrete (8 buckets) |
-| Stockfish `UCI_Elo` | 1320–3190 | **Continuous** (linear interpolation) |
+`eloToUCIElo()` maps the opponent's rating (clamped to 400–2500) linearly onto
+Stockfish's `UCI_Elo` range (1320–3190), then sets `UCI_LimitStrength true`. This gives a
+smooth difficulty curve that mirrors the opponent's strength.
 
-**`eloToUCIElo()`** maps the opponent's Elo (400–2500) linearly to Stockfish's UCI_Elo range (1320–3190). Values outside [400, 2500] are clamped. This gives a smooth difficulty curve without the jumps of bucket-based level selection — your opponent's exact strength is preserved in the UCI_Elo parameter sent to Stockfish.
+## FEN extraction (fallback chain)
 
-The Lichess level (1–8) is used for the Lichess AI form, while the UCI_Elo value is stored alongside it for direct Stockfish control.
+Tried in order; the first that yields a position wins:
 
----
+| # | Source |
+|:--|:-------|
+| 1 | `game-fen` / `fen` attribute on `wc-chess-board` (a full, authoritative FEN) |
+| 2 | React/internal state on the board element (`setupFen` / `game.fen` / …) |
+| 3 | Global app state (`window.chessground.state.fen` / `window.board.game.fen` / `window.game.fen`) |
+| 4 | Light-DOM piece `<div>`s (`[class*="piece"][class*="square-"]`) → assembled FEN, castling estimated from home squares |
+| 5 | Same piece parsing inside the board's `shadowRoot` |
 
-## FEN Extraction (5 Fallbacks)
+Sources 1–3 carry real castling/en-passant data, so they are preferred over the scraped
+placement.
 
-| # | Method | Selector / Source |
-|:--|:-------|:------------------|
-| 1 | Attribute | `wc-chess-board[game-fen]` or `[fen]` |
-| 2 | React state | Internal `__react...` fiber on board element |
-| 3 | Light DOM | Piece divs (`[class*="piece"][class*="square-"]`) → build FEN |
-| 4 | Shadow DOM | Same piece parsing inside `board.shadowRoot` |
-| 5 | Window state | `window.chessground.state.fen` / `window.board.game.fen` / `window.game.fen` |
-
----
-
-## Elo Detection (9 Strategies)
-
-| # | Strategy | Logged as |
-|:--|:---------|:----------|
-| 1 | `.board-player-component:first-child .user-tagline-rating` | `[elo:1]` |
-| 2 | `.player-component.player-top .user-tagline-rating` | `[elo:2]` |
-| 3 | `[data-opponent-rating]` attribute | `[elo:3]` |
-| 4 | `.board-player-component:first-child [data-rating]` | `[elo:4]` |
-| 5 | `.board-player-component:first-child .rating-number` | `[elo:5]` |
-| 6 | `[class*="rating"]:not(.user-tagline-rating)` with 3-4 digit text | `[elo:6]` |
-| 7 | Max `.user-tagline-rating` across all elements | `[elo:7]` |
-| 8 | React internal state on opponent section | `[elo:8]` |
-| 9 | `window.__PRELOADED_STATE__` | `[elo:9]` |
-| Fallback | `1500` | `[elo:0]` |
-
----
-
-## Project Structure
+## Project structure
 
 ```
 ├── lib/
-│   ├── chess-utils.js      # Pure functions: FEN, Elo, turn, color, game-over (Chess.com)
-│   └── lichess-utils.js    # Pure functions: editor form, selectors, game-over (Lichess)
-├── tests/
-│   ├── fixtures/              # HTML snapshot fixtures (realistic DOM pages)
-│   ├── chess-utils.test.js    # 54 tests — FEN, Elo, color, turn, game-over
-│   ├── lichess-utils.test.js  # 22 tests — editor auto-start, selectors, form
-│   └── fixtures.test.js       # 19 tests — snapshot E2E extraction pipeline
-├── content_chesscom.js     # Button injection + FEN extraction (Chess.com)
-├── content_lichess.js      # Auto-start + game-over detection (Lichess)
-├── stockfish.js            # Stockfish WASM binary (~10 MB)
-├── service-worker.js       # Minimal MV3 service worker
-├── popup.html / popup.js   # On/off toggle popup
-├── package.json            # npm test runner (vitest + jsdom)
-├── vitest.config.js        # Vitest configuration
-├── icons/                  # Extension icons (16/32/48/128)
-├── manifest.json           # Chrome MV3 manifest
-├── manifest-firefox.json   # Firefox MV3 manifest
-├── CONTRIBUTING.md         # Local dev guide
-├── ARCHITECTURE.md         # This file
-├── README.md               # User-facing docs
-├── LICENSE                 # MIT
-└── .github/                # CI + issue templates
+│   ├── chess-core.js     # Pure chess logic (no DOM): FEN ↔ board, applyUciMove, Elo→UCI, perft parsing
+│   └── chess-dom.js      # Chess.com DOM scraping: getFEN, colour, opponent Elo, game-over, click→square
+├── content_chesscom.js   # Orchestration: engine worker, board rendering, input, lifecycle
+├── service-worker.js     # MV3 background — sets the default on/off state
+├── popup.html / popup.js # On/off toggle
+├── stockfish.js          # Stockfish engine (~10 MB, downloaded, git-ignored)
+├── stockfish.js.sha256   # Pinned engine checksum
+├── manifest.json         # Chrome MV3 manifest
+├── manifest-firefox.json # Firefox MV3 manifest (Gecko 128+)
+├── tests/                # vitest (jsdom): chess-core + chess-dom, with HTML fixtures
+├── icons/                # 16 / 32 / 48 / 128
+└── scripts/download-stockfish.sh
 ```
 
----
+The manifests load `lib/chess-core.js`, `lib/chess-dom.js`, then `content_chesscom.js`
+into the same content-script world; the libs expose their functions as globals there and
+via `module.exports` for the tests.
 
-## Browser Porting
+## Browser support
 
 | Browser | Status | Notes |
-|:--------|:-------|:------|
-| Chrome MV3 | ✅ Supported | `manifest.json`, works in Edge/Brave/Arc/Opera |
-| Firefox MV3 | ✅ Supported | `manifest-firefox.json`, Gecko 128+ |
-| Safari | ❌ Not yet | Needs Xcode project + `SFSafariExtensionHandler` |
-
-**Safari**: Would require wrapping the extension with Apple's [Safari Web Extension Converter](https://developer.apple.com/documentation/safariservices/safari_web_extensions/converting_a_web_extension_for_safari). The `chrome.*` APIs would need a `browser.*` polyfill or explicit `Promise` wrappers since Safari uses the `browser` namespace (like Firefox). This also enables iOS support.
-
----
+|:--------|:------:|:------|
+| Chrome MV3 | ✅ | `manifest.json` — also Edge / Brave / Arc / Opera |
+| Firefox MV3 | ✅ | `manifest-firefox.json`, Gecko 128+ |
+| Safari | ❌ | Would need the Safari Web Extension Converter + a `browser.*` shim |
 
 ## Testing
 
 ```bash
-npm install    # install vitest + jsdom
-npm test       # runs 95 tests (vitest)
-npm run test:watch  # dev mode
+npm install
+npm test          # vitest (jsdom)
+npm run test:watch
 ```
 
-Tests use **the same `lib/*-utils.js` files** the extension loads — no mocked copies, no bundler shims. Snapshot E2E tests (`tests/fixtures.test.js`) load realistic HTML pages and verify the full extraction pipeline.
-
-### Weekly Selector Audit
-
-A scheduled GitHub Action runs every Sunday to test the extraction selectors against live Chess.com/Lichess pages. If all strategies return `null`/default, the workflow fails — signaling a possible frontend breakage.
-
-The audit script (`scripts/audit-selectors.mjs`) uses Playwright to:
-1. Open a completed game on Chess.com
-2. Wait for the game-over modal
-3. Run `getFEN()` and `getOpponentElo()` in the page context
-4. Report which strategies matched
+`chess-core.test.js` covers the pure logic (move application incl. castling/en-passant/
+promotion, FEN round-trips, Elo mapping, perft parsing). `chess-dom.test.js` runs the
+scrapers against realistic HTML fixtures under jsdom.
