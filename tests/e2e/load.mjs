@@ -107,6 +107,7 @@ const overlaySquares = () => page.$$eval('#board [data-sfct]', els =>
                 (el.className.match(/square-\d\d/) || [])[0]).filter(s => !s.startsWith('undefined')).sort());
 
 const before = await overlaySquares();
+const movedAt = Date.now();
 // Tag the pawn's DOM node: if the same node is still there after the move, the
 // renderer moved it (so the board can animate) instead of rebuilding the board.
 await page.$eval('#board [data-sfct="piece"].square-52', el => { el.dataset.tag = 'watched-pawn'; });
@@ -129,10 +130,13 @@ if (after.includes('wp@square-52')) fail('player pawn still on e2: ' + after);
 const blackBefore = before.filter(s => s.startsWith('b')).join();
 const blackAfter = after.filter(s => s.startsWith('b')).join();
 if (blackBefore === blackAfter) fail('Stockfish reply not rendered on the board: ' + blackAfter);
+// The reply must be paced, not instant — an instant answer reads as a glitch.
+const replyMs = Date.now() - movedAt;
+if (replyMs < 380) fail(`Stockfish replied in ${replyMs}ms — that is not a move, that is a flicker`);
 const samePawnNode = await page.$eval('#board [data-sfct="piece"].square-54',
   el => el.dataset.tag === 'watched-pawn').catch(() => false);
 if (!samePawnNode) fail('the pawn node was rebuilt instead of moved — the move cannot animate');
-console.log('PASS 6/7: player move accepted + Stockfish replied (piece node moved, not rebuilt)');
+console.log(`PASS 6/7: move accepted, Stockfish replied after ${replyMs}ms (paced, node moved not rebuilt)`);
 console.log('         white pawn e2→e4 on the Chess.com board; black changed:',
   before.filter(x => !after.includes(x)).join(' ') || '(none)', '→',
   after.filter(x => !before.includes(x)).join(' '));

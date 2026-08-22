@@ -15,10 +15,15 @@ function warn(...args) { if (DEBUG) console.warn('[SF+]', ...args); }
 log('content script loaded — v' + chrome.runtime.getManifest().version + ' —', location.href);
 
 const ENGINE_DEPTH = 12;
-// An instant reply reads as a glitch, not as a move. Hold every engine move for
-// at least this long (measured from when it started thinking) so the game has
-// the rhythm of a game.
-const ENGINE_MIN_THINK_MS = 650;
+// An instant reply reads as a glitch, not as a move. Every engine move is held
+// back to the pace of the game you were just playing: the average move time read
+// off the finished game's clocks when Chess.com shows them, otherwise the pace
+// you are setting yourself in this continuation. Clamped at both ends — never
+// instant, never a wait.
+const PACE_MIN_MS = 400;
+const PACE_MAX_MS = 3000;
+const PACE_DEFAULT_MS = 650;
+const PACE_SAMPLES = 3; // how many of your own recent moves the pace follows
 const ENGINE_INIT_TIMEOUT_MS = 15000;
 const REFRESH_INTERVAL_MS = 1000;
 const POLL_INTERVAL_MS = 200;
@@ -118,7 +123,7 @@ function onEngineMessage({ data }) {
     const move = data.split(' ')[1];
     const uci = move && move !== '(none)' ? move : null;
     const session = sessionId;
-    const rest = Math.max(0, ENGINE_MIN_THINK_MS - (Date.now() - _thinkStart));
+    const rest = Math.max(0, pacingTarget() - (Date.now() - _thinkStart));
     setTimeout(() => { if (session === sessionId) onEngineMove(uci); }, rest);
     return;
   }
@@ -147,6 +152,19 @@ function enginePosition() {
 }
 
 let _thinkStart = 0;
+
+const clampPace = (ms) => Math.min(PACE_MAX_MS, Math.max(PACE_MIN_MS, Math.round(ms)));
+
+// How long the engine's next move should take, all in.
+function pacingTarget() {
+  const st = chesscomState;
+  if (!st) return PACE_DEFAULT_MS;
+  if (st.gamePaceMs) return clampPace(st.gamePaceMs);
+  if (st.yourPaces?.length) {
+    return clampPace(st.yourPaces.reduce((a, b) => a + b, 0) / st.yourPaces.length);
+  }
+  return PACE_DEFAULT_MS;
+}
 
 function engineThink() {
   updateStatus('Stockfish thinking…');
@@ -269,6 +287,10 @@ function showChesscomBoard(fen, color, strengthSetting) {
       startFen: fen, moves: [], boardData: fenToBoard(fen),
       selectedSq: null, playerSide, engineSide, sideToMove, board,
       strengthSetting, finished: false,
+      // Seconds per move in the game just played, when its clocks are on the page.
+      gamePaceMs: (averageMoveSeconds() || 0) * 1000,
+      yourPaces: [],
+      turnStart: Date.now(),
     };
 
     injectBoardStyle();
@@ -534,6 +556,10 @@ function handleDragMove(from, to) {
 function makePlayerMove(from, to) {
   const st = chesscomState;
   if (!st) return;
+  if (st.turnStart) { // your own pace, in case the finished game showed no clocks
+    st.yourPaces.push(Date.now() - st.turnStart);
+    if (st.yourPaces.length > PACE_SAMPLES) st.yourPaces.shift();
+  }
   const uci = toUci(st.boardData, from, to);
   const res = applyUciMove(st.boardData, uci);
   if (!res.moved) return;
@@ -557,6 +583,7 @@ function onEngineMove(uci) {
   st.boardData = res.board;
   st.moves.push(uci);
   st.sideToMove = st.playerSide;
+  st.turnStart = Date.now();
   syncBoardToState();
   updateStatus('Your move');
   postCmd(enginePosition());
