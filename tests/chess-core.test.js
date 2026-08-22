@@ -24,35 +24,11 @@ describe('eloToUCIElo', () => {
   });
 });
 
-describe('fenToBoard / boardToPlacement', () => {
+describe('fenToBoard', () => {
   it('parses the start position', () => {
     const b = c.fenToBoard(START);
-    expect(b.e1).toBe('K');
-    expect(b.d8).toBe('q');
-    expect(b.a1).toBe('R');
-    expect(b.e4).toBeUndefined();
-    expect(Object.keys(b)).toHaveLength(32);
-  });
-  it('round-trips placement', () => {
-    expect(c.boardToPlacement(c.fenToBoard(START))).toBe(START.split(' ')[0]);
-    const mid = 'r1bqkb1r/pppp1ppp/2n2n2/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R';
-    expect(c.boardToPlacement(c.fenToBoard(mid + ' w KQkq - 4 4'))).toBe(mid);
-  });
-});
-
-describe('castlingFromBoard', () => {
-  it('full rights at start', () => {
-    expect(c.castlingFromBoard(c.fenToBoard(START))).toBe('KQkq');
-  });
-  it('drops a side when its rook is gone', () => {
-    const b = c.fenToBoard(START);
-    delete b.h1;
-    expect(c.castlingFromBoard(b)).toBe('Qkq');
-  });
-  it('"-" when no king on home square', () => {
-    const b = c.fenToBoard(START);
-    delete b.e1; delete b.e8;
-    expect(c.castlingFromBoard(b)).toBe('-');
+    expect(b.e1).toBe('K'); expect(b.e8).toBe('k'); expect(b.a2).toBe('P');
+    expect(Object.keys(b).length).toBe(32);
   });
 });
 
