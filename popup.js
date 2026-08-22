@@ -14,6 +14,12 @@ document.addEventListener('DOMContentLoaded', () => {
     update(res.active !== false);
   });
 
+  const strength = document.getElementById('strength');
+  chrome.storage.local.get(['strength'], (res) => { strength.value = res.strength || 'auto'; });
+  strength.addEventListener('change', () => {
+    chrome.storage.local.set({ strength: strength.value });
+  });
+
   toggle.addEventListener('click', () => {
     chrome.storage.local.get(['active'], (res) => {
       const next = !(res.active !== false);

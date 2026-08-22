@@ -107,6 +107,9 @@ const overlaySquares = () => page.$$eval('#board [data-sfct]', els =>
                 (el.className.match(/square-\d\d/) || [])[0]).filter(s => !s.startsWith('undefined')).sort());
 
 const before = await overlaySquares();
+// Tag the pawn's DOM node: if the same node is still there after the move, the
+// renderer moved it (so the board can animate) instead of rebuilding the board.
+await page.$eval('#board [data-sfct="piece"].square-52', el => { el.dataset.tag = 'watched-pawn'; });
 const from = sq(5, 2), to = sq(5, 4); // e2 → e4
 await page.mouse.move(from.x, from.y); await page.mouse.down(); await page.mouse.up();
 await page.mouse.move(to.x, to.y); await page.mouse.down(); await page.mouse.up();
@@ -126,7 +129,10 @@ if (after.includes('wp@square-52')) fail('player pawn still on e2: ' + after);
 const blackBefore = before.filter(s => s.startsWith('b')).join();
 const blackAfter = after.filter(s => s.startsWith('b')).join();
 if (blackBefore === blackAfter) fail('Stockfish reply not rendered on the board: ' + blackAfter);
-console.log('PASS 6/7: player move accepted + Stockfish replied');
+const samePawnNode = await page.$eval('#board [data-sfct="piece"].square-54',
+  el => el.dataset.tag === 'watched-pawn').catch(() => false);
+if (!samePawnNode) fail('the pawn node was rebuilt instead of moved — the move cannot animate');
+console.log('PASS 6/7: player move accepted + Stockfish replied (piece node moved, not rebuilt)');
 console.log('         white pawn e2→e4 on the Chess.com board; black changed:',
   before.filter(x => !after.includes(x)).join(' ') || '(none)', '→',
   after.filter(x => !before.includes(x)).join(' '));
@@ -179,6 +185,44 @@ await page.waitForFunction(
 ).catch(() => fail('engine never became ready after a mid-load stop'));
 if (await page.locator('#board [data-sfct]').count() < 10) fail('board lost its pieces after restart');
 console.log('PASS 10: restart after a mid-load stop works —', await page.locator('#sfct-badge').textContent());
+
+// 11. losing is detected and named. Fool's mate: after 1. f3 e5 2. g4 it is
+// Black (the engine) to move and Qd8-h4 is mate, so the player must be told they
+// lost — not left staring at a frozen board.
+const fenToDivs = (placement) => placement.split('/').flatMap((row, r) => {
+  const out = [];
+  let f = 0;
+  for (const ch of row) {
+    if (ch >= '1' && ch <= '8') { f += +ch; continue; }
+    const color = ch === ch.toUpperCase() ? 'w' : 'b';
+    out.push(`<div class="piece ${color}${ch.toLowerCase()} square-${f + 1}${8 - r}"></div>`);
+    f++;
+  }
+  return out;
+}).join('');
+const MATE_HTML = `<!doctype html><html><body style="margin:0">
+<div class="player-row-component player-row-top"><span class="cc-user-rating-white">(1450)</span></div>
+<wc-chess-board id="board" style="position:relative;display:block;width:480px;height:480px;background:#eee">
+${fenToDivs('rnbqkbnr/pppp1ppp/8/4p3/6P1/5P2/PPPPP2P/RNBQKBNR')}</wc-chess-board>
+<div class="move-list"><div class="node white-move main-line-ply">f3</div>
+<div class="node black-move main-line-ply">e5</div>
+<div class="node white-move main-line-ply">g4</div></div>
+<div class="game-over-modal-shell-container"><div class="game-over-modal-shell-buttons">
+<button aria-label="New Game">New Game</button></div></div>
+</body></html>`;
+await page.route('https://www.chess.com/game/live/mate', route =>
+  route.fulfill({ status: 200, contentType: 'text/html', body: MATE_HTML }));
+await page.goto('https://www.chess.com/game/live/mate', { waitUntil: 'domcontentloaded' });
+await page.locator('#sfctplay-btn').waitFor({ timeout: 10000 }).catch(() => fail('no button on the mate page'));
+await page.locator('#sfctplay-btn').click();
+await page.waitForFunction(
+  () => /Checkmate|Stalemate/.test(document.getElementById('sfctplay-banner')?.textContent || ''),
+  null, { timeout: 90000 }
+).catch(async () => fail('game end never declared; badge=' +
+  (await page.locator('#sfct-badge').textContent().catch(() => '(none)'))));
+const verdict = (await page.locator('#sfctplay-banner').textContent()).replace('(click to close)', '').trim();
+if (!/Checkmate — Stockfish wins/.test(verdict)) fail('wrong verdict: ' + verdict);
+console.log('PASS 11: loss detected and named —', verdict);
 
 console.log('\nALL CHECKS PASSED');
 if (logs.length) console.log('--- page logs ---\n' + logs.join('\n'));
