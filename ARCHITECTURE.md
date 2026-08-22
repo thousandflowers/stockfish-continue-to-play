@@ -59,6 +59,7 @@ placement.
 ├── manifest.json         # Chrome MV3 manifest
 ├── manifest-firefox.json # Firefox MV3 manifest (Gecko 128+)
 ├── tests/                # vitest (jsdom): chess-core + chess-dom, with HTML fixtures
+│   └── e2e/load.mjs      # real-browser end-to-end run (not in CI)
 ├── icons/                # 16 / 32 / 48 / 128
 └── scripts/download-stockfish.sh
 ```
@@ -81,8 +82,11 @@ via `module.exports` for the tests.
 npm install
 npm test          # vitest (jsdom)
 npm run test:watch
+npm run test:e2e  # real Chromium + real Stockfish WASM (needs the engine binary)
 ```
 
 `chess-core.test.js` covers the pure logic (move application incl. castling/en-passant/
 promotion, FEN round-trips, Elo mapping, perft parsing). `chess-dom.test.js` runs the
-scrapers against realistic HTML fixtures under jsdom.
+scrapers against realistic HTML fixtures under jsdom. `tests/e2e/load.mjs` covers what
+neither can: the extension actually loading in a browser, the engine worker starting,
+moves round-tripping through Stockfish, and cleanup on stop.

@@ -32,14 +32,29 @@ script.
 ## Testing
 
 ```bash
-npm test            # run once
+npm test            # unit tests, run once
 npm run test:watch  # watch mode
+npm run test:e2e    # real browser + real engine (see below)
 ```
 
 - Add pure-logic cases to `tests/chess-core.test.js`.
 - Add scraping cases to `tests/chess-dom.test.js`; for new DOM shapes, drop a realistic
   page snapshot in `tests/fixtures/`.
 - All tests must pass before a PR (CI runs `npm test` on push/PR).
+
+`npm run test:e2e` loads the unpacked extension into a real Chromium, serves a fake
+Chess.com game-over page on a `chess.com` URL and drives the whole flow: button
+injection → inline board → engine ready → a player move → Stockfish's reply → teardown.
+It needs the engine binary and a browser:
+
+```bash
+bash scripts/download-stockfish.sh
+npx playwright install chromium
+```
+
+It is deliberately out of CI (headed browser + 10 MB engine). Run it before any release,
+and whenever you touch `content_chesscom.js` — the unit tests cannot see injection,
+worker or lifecycle regressions.
 
 ## Conventions
 
