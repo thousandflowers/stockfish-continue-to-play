@@ -85,7 +85,7 @@ to the strongest explicit rating node on the page, then to 1500.
 ├── manifest.json         # Chrome MV3 manifest
 ├── manifest-firefox.json # Firefox MV3 manifest (Gecko 128+)
 ├── tests/                # vitest (jsdom): chess-core + chess-dom, with HTML fixtures
-│   └── e2e/load.mjs      # real-browser end-to-end run (not in CI)
+│   └── e2e/load.mjs      # real-browser end-to-end run (headed locally, headless in CI)
 ├── icons/                # 16 / 32 / 48 / 128
 └── scripts/download-stockfish.sh
 ```
