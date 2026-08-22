@@ -17,3 +17,31 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+
+  # The unit tests cover the pure helpers; this is the one that exercises the
+  # real extension in a real browser with the real engine — every production bug
+  # found so far was caught here, not by the unit tests.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Cache the Stockfish engine
+        uses: actions/cache@v4
+        with:
+          path: stockfish.js
+          key: stockfish-${{ hashFiles('stockfish.js.sha256') }}
+      - name: Fetch the engine if the cache missed
+        run: bash scripts/download-stockfish.sh
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e

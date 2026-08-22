@@ -40,7 +40,7 @@ npm run test:e2e    # real browser + real engine (see below)
 - Add pure-logic cases to `tests/chess-core.test.js`.
 - Add scraping cases to `tests/chess-dom.test.js`; for new DOM shapes, drop a realistic
   page snapshot in `tests/fixtures/`.
-- All tests must pass before a PR (CI runs `npm test` on push/PR).
+- All tests must pass before a PR. CI runs both `npm test` and `npm run test:e2e` on push/PR.
 
 `npm run test:e2e` loads the unpacked extension into a real Chromium, serves a fake
 Chess.com game-over page on a `chess.com` URL and drives the whole flow: button
@@ -52,7 +52,9 @@ bash scripts/download-stockfish.sh
 npx playwright install chromium
 ```
 
-It is deliberately out of CI (headed browser + 10 MB engine). Run it before any release,
+CI runs it too: the engine is cached by its pinned checksum and the browser goes headless
+(`CI=1` picks Chrome's new headless mode, the only one that loads extensions). Locally it stays
+headed so you can watch it play. Run it before any release,
 and whenever you touch `content_chesscom.js` — the unit tests cannot see injection,
 worker or lifecycle regressions.
 

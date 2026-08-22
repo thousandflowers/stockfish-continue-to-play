@@ -7,8 +7,8 @@
 //   npm i --no-save playwright && npx playwright install chromium
 //   npm run test:e2e
 //
-// Not in CI: it needs a headed browser and the 10 MB engine, neither of which
-// belongs in the unit-test workflow.
+// Runs in CI too (see .github/workflows/test.yml): the engine is cached by its
+// pinned checksum and the browser runs headless. Locally it stays headed.
 import { chromium } from 'playwright';
 import { mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -39,8 +39,12 @@ const HTML = `<!doctype html><html><body style="margin:0">
 </div></div>
 </body></html>`;
 
+// Headed locally (you can watch it play), headless in CI. Extensions only load
+// in Chrome's new headless mode, which Playwright selects via channel:'chromium'.
+const headless = !!process.env.CI;
 const ctx = await chromium.launchPersistentContext(userDataDir, {
-  headless: false,
+  headless,
+  ...(headless ? { channel: 'chromium' } : {}),
   args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`],
 });
 

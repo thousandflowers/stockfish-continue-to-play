@@ -19,7 +19,8 @@ verify() {
   fi
   local want have
   want="$(cut -d' ' -f1 < "$SHA_FILE")"
-  have="$(shasum -a 256 "$OUT" | cut -d' ' -f1)"
+  if command -v shasum >/dev/null 2>&1; then have="$(shasum -a 256 "$OUT" | cut -d' ' -f1)"
+  else have="$(sha256sum "$OUT" | cut -d' ' -f1)"; fi
   if [ "$want" != "$have" ]; then
     echo "✗ checksum mismatch for stockfish.js" >&2
     echo "  expected $want" >&2
