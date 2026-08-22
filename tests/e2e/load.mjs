@@ -234,6 +234,16 @@ const stillHidden = await page.$$eval('#board [class*="piece"]:not([data-sfct])'
 if (stillHidden !== 0) fail('Chess.com pieces came back while the result was still up');
 console.log('PASS 12: final position stays on the board —', frozen, 'pieces held');
 
+// 12b. the mated king wears Chess.com's red square
+const checkMark = await page.$$eval('#board [data-sfct="check"]', els => els.map(e => ({
+  cls: e.className,
+  bg: getComputedStyle(e).backgroundImage.slice(0, 24),
+  sq: (e.className.match(/square-\d\d/) || [])[0],
+})));
+if (checkMark.length !== 1) fail(`expected the checked king to be marked once, got ${checkMark.length}`);
+if (!/radial-gradient/.test(checkMark[0].bg)) fail('check mark is not painted: ' + checkMark[0].bg);
+console.log('PASS 12b: checked king marked red on', checkMark[0].sq);
+
 // 13. …and leaving hands the board back
 await page.getByRole('button', { name: 'Back to Chess.com' }).click();
 await page.waitForTimeout(500);

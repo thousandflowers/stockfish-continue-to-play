@@ -21,7 +21,8 @@ const ENGINE_DEPTH = 12;
 // you are setting yourself in this continuation. Clamped at both ends — never
 // instant, never a wait.
 const PACE_MIN_MS = 400;
-const PACE_MAX_MS = 3000;
+const PACE_MAX_MS = 1600;   // past this a reply stops feeling like thinking and starts feeling like waiting
+const PACE_OF_GAME = 0.7;   // a continuation runs brisker than the game it came from
 const PACE_DEFAULT_MS = 650;
 const PACE_SAMPLES = 3; // how many of your own recent moves the pace follows
 const ENGINE_INIT_TIMEOUT_MS = 15000;
@@ -159,11 +160,10 @@ const clampPace = (ms) => Math.min(PACE_MAX_MS, Math.max(PACE_MIN_MS, Math.round
 function pacingTarget() {
   const st = chesscomState;
   if (!st) return PACE_DEFAULT_MS;
-  if (st.gamePaceMs) return clampPace(st.gamePaceMs);
-  if (st.yourPaces?.length) {
-    return clampPace(st.yourPaces.reduce((a, b) => a + b, 0) / st.yourPaces.length);
-  }
-  return PACE_DEFAULT_MS;
+  const base = st.gamePaceMs ? st.gamePaceMs * PACE_OF_GAME
+    : st.yourPaces?.length ? st.yourPaces.reduce((a, b) => a + b, 0) / st.yourPaces.length
+    : PACE_DEFAULT_MS;
+  return clampPace(base * (0.88 + Math.random() * 0.24)); // never twice the same beat
 }
 
 function engineThink() {
@@ -243,6 +243,9 @@ function injectBoardStyle() {
     // stop hands the board straight back instead of leaving it blank.
     'wc-chess-board [class*="piece"]:not([data-sfct]),chess-board [class*="piece"]:not([data-sfct]){display:none!important}',
     '[data-sfct="piece"]{transition:transform var(--move-animation-duration,180ms) ease-out}',
+    '.sfct-check{background:radial-gradient(ellipse at center,rgba(255,0,0,.9) 0%,rgba(231,0,0,.8) 25%,rgba(169,0,0,0) 89%)}',
+    '@keyframes _sfctshake{0%,100%{transform:var(--sfct-xy)}25%{transform:var(--sfct-xy) translateX(-6%)}75%{transform:var(--sfct-xy) translateX(6%)}}',
+    '.sfct-shake{animation:_sfctshake .32s ease-in-out}',
     '.sfct-sel{box-shadow:inset 0 0 0 3px #ffd700,0 0 12px rgba(255,215,0,.5);border-radius:4px}',
     '.sfct-dot::after{content:"";position:absolute;width:28%;height:28%;border-radius:50%;background:rgba(0,0,0,.18);top:36%;left:36%}',
   ].join('');
@@ -446,6 +449,19 @@ function syncBoardToState() {
     }
     nodes.forEach((el, sq) => el.classList.toggle('sfct-sel', sq === selectedSq));
 
+    // A king in check gets the red square, and keeps it while the check stands.
+    board.querySelectorAll(':scope > [data-sfct="check"]').forEach(el => el.remove());
+    const checkedKing = isKingAttacked(boardData, st.sideToMove) && kingSquare(boardData, st.sideToMove);
+    if (checkedKing) {
+      const mark = document.createElement('div');
+      mark.setAttribute('data-sfct', 'check');
+      mark.className = 'sfct-check';
+      mark.style.cssText = 'position:absolute;top:0;left:0;width:12.5%;height:12.5%;z-index:3;pointer-events:none';
+      place(mark, checkedKing);
+      mark.style.setProperty('--sfct-xy', mark.style.transform);
+      board.appendChild(mark);
+    }
+
     board.querySelectorAll(':scope > [data-sfct="dot"]').forEach(el => el.remove());
     for (const dest of dests || []) {
       const dot = document.createElement('div');
@@ -520,6 +536,20 @@ function startRefreshTimer() {
   }, REFRESH_INTERVAL_MS);
 }
 
+// Chess.com answers an illegal move by shaking the king's red square. Same here:
+// it is the fastest way to say "you are in check, deal with that first".
+function refuseMove() {
+  const st = chesscomState;
+  const inCheck = st && isKingAttacked(st.boardData, st.sideToMove);
+  updateStatus(inCheck ? 'You are in check' : 'Illegal move');
+  if (!inCheck) return;
+  const mark = document.querySelector('[data-sfct="check"]');
+  if (!mark) return;
+  mark.classList.remove('sfct-shake');
+  void mark.offsetWidth; // restart the animation
+  mark.classList.add('sfct-shake');
+}
+
 function ownsPiece(piece) {
   if (!piece || !chesscomState) return false;
   return chesscomState.playerSide === 'w' ? piece === piece.toUpperCase() : piece === piece.toLowerCase();
@@ -535,11 +565,12 @@ function handleSquareClick(sq) {
 
   if (!sel) {
     if (!ownsPiece(piece)) return;
+    if (_legalMoves && !legalDestsFrom(_legalMoves, sq)?.size) { refuseMove(); return; }
     st.selectedSq = sq; syncBoardToState(); updateStatus('Select destination'); return;
   }
   if (sel === sq) { st.selectedSq = null; syncBoardToState(); updateStatus('Your move'); return; }
   if (ownsPiece(piece)) { st.selectedSq = sq; syncBoardToState(); updateStatus('Select destination'); return; }
-  if (!isLegalMove(_legalMoves, sel, sq)) { st.selectedSq = null; syncBoardToState(); updateStatus('Illegal move'); return; }
+  if (!isLegalMove(_legalMoves, sel, sq)) { st.selectedSq = null; syncBoardToState(); refuseMove(); return; }
   makePlayerMove(sel, sq);
 }
 
@@ -548,7 +579,7 @@ function handleDragMove(from, to) {
   if (!st || st.finished || st.sideToMove !== st.playerSide) return;
   if (!_legalMoves) { updateStatus('Calculating…'); return; }
   if (!ownsPiece(st.boardData[from])) return;
-  if (!isLegalMove(_legalMoves, from, to)) { updateStatus('Illegal move'); return; }
+  if (!isLegalMove(_legalMoves, from, to)) { refuseMove(); return; }
   st.selectedSq = null;
   makePlayerMove(from, to);
 }

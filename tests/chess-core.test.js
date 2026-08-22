@@ -32,6 +32,41 @@ describe('fenToBoard', () => {
   });
 });
 
+describe('isKingAttacked', () => {
+  const b = (fen) => c.fenToBoard(fen);
+  it('start position: neither king is attacked', () => {
+    expect(c.isKingAttacked(b(START), 'w')).toBe(false);
+    expect(c.isKingAttacked(b(START), 'b')).toBe(false);
+  });
+  it('the queen check that ends fool\'s mate', () => {
+    expect(c.isKingAttacked(b('rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3'), 'w')).toBe(true);
+  });
+  it('knight check', () => {
+    expect(c.isKingAttacked(b('4k3/8/8/8/8/5n2/8/4K3 w - - 0 1'), 'w')).toBe(true);
+  });
+  it('a pawn checks diagonally, never from straight ahead', () => {
+    expect(c.isKingAttacked(b('4k3/8/8/8/8/8/3p4/4K3 w - - 0 1'), 'w')).toBe(true);  // d2 hits e1
+    expect(c.isKingAttacked(b('4k3/8/8/8/8/8/4p3/4K3 w - - 0 1'), 'w')).toBe(false); // e2 does not
+  });
+  it('a rook on the file checks, unless something blocks it', () => {
+    expect(c.isKingAttacked(b('4k3/8/8/4r3/8/8/8/4K3 w - - 0 1'), 'w')).toBe(true);
+    expect(c.isKingAttacked(b('4k3/8/8/4r3/8/4P3/8/4K3 w - - 0 1'), 'w')).toBe(false);
+  });
+  it('a bishop on the diagonal checks; a friendly piece in the way does not', () => {
+    expect(c.isKingAttacked(b('4k3/8/8/8/1b6/8/8/4K3 w - - 0 1'), 'w')).toBe(true);
+    expect(c.isKingAttacked(b('4k3/8/8/8/1b6/2P5/8/4K3 w - - 0 1'), 'w')).toBe(false);
+  });
+  it('kings cannot stand next to each other', () => {
+    expect(c.isKingAttacked(b('8/8/8/8/8/8/4k3/4K3 w - - 0 1'), 'w')).toBe(true);
+  });
+  it('an enemy piece of the wrong kind is not a check', () => {
+    expect(c.isKingAttacked(b('4k3/8/8/8/8/8/4b3/4K3 w - - 0 1'), 'w')).toBe(false);
+  });
+  it('no king on the board means nothing to check', () => {
+    expect(c.isKingAttacked({ e2: 'r' }, 'w')).toBe(false);
+  });
+});
+
 describe('diffBoards', () => {
   const board = (fen) => c.fenToBoard(fen);
   it('a quiet move is one moved piece, nothing added or removed', () => {
