@@ -36,8 +36,14 @@
 
 <div data-opponent-rating="1740"></div>
 
-<div data-whole-move-number="0">d4</div>
-<div data-whole-move-number="1">d5</div>
-<div data-whole-move-number="2">c4</div>
+<!-- Move list in the shape chess.com actually renders: one node per ply, tagged
+     with the colour that played it. Last ply is White's, so Black is to move. -->
+<div class="analysis-view-movelist move-list">
+  <div class="main-line-row move-list-row">
+    <div class="node white-move main-line-ply">d4</div>
+    <div class="node black-move main-line-ply">d5</div>
+    <div class="node white-move main-line-ply">c4</div>
+  </div>
+</div>
 
 <div class="game-over-modal-component"></div>

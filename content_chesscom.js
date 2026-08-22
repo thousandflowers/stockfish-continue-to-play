@@ -258,6 +258,7 @@ function syncBoardToState() {
   try {
     const { board, boardData, selectedSq } = chesscomState;
     const rect = board.getBoundingClientRect();
+    if (!rect.width) return; // board hidden/detached — every piece would stack on a1
     const flipped = isFlipped(board);
     const sqSize = rect.width / 8;
     const dests = (selectedSq && _legalMoves) ? legalDestsFrom(_legalMoves, selectedSq) : null;
@@ -570,7 +571,14 @@ function injectButtons() {
   log('button injected (appended to modal)');
 }
 
+// A reloaded/updated extension orphans this content script: every chrome.* call
+// then throws "Extension context invalidated".
+function extensionAlive() {
+  try { return !!chrome.runtime?.id; } catch (_) { return false; }
+}
+
 function tryInject() {
+  if (!extensionAlive()) { clearInterval(pollTimer); clearInterval(navTimer); return; }
   // While playing, the game-over modal is only CSS-hidden, so isGameOver() stays
   // true — without this guard the trigger button reappears over the live board.
   if (chesscomState) return;
@@ -583,7 +591,12 @@ function tryInject() {
   }
   if (existing) return;
   log('game over detected — injecting button');
-  chrome.storage.local.get(['active'], ({ active }) => { if (active !== false) injectButtons(); });
+  // Re-check chesscomState inside the callback: a tick that fired just before
+  // the user clicked Continue would otherwise land after the game started and
+  // put the trigger back over the live board.
+  chrome.storage.local.get(['active'], ({ active }) => {
+    if (active !== false && !chesscomState) injectButtons();
+  });
 }
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────
