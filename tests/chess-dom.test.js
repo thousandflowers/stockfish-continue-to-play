@@ -173,6 +173,37 @@ describe('fixture: chesscom-gameover-real-modal (captured from live chess.com)',
   });
 });
 
+// ── averageMoveSeconds ───────────────────────────────────────────────────────
+describe('averageMoveSeconds', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  const list = (plies) => {
+    document.body.innerHTML = '<div class="move-list">' + plies.map(([san, clock], i) =>
+      `<div class="node ${i % 2 ? 'black' : 'white'}-move main-line-ply">${san}` +
+      (clock ? `<span class="node-clock">${clock}</span>` : '') + '</div>').join('') + '</div>';
+  };
+  it('null when the move list has no clocks', () => {
+    list([['e4'], ['e5'], ['Nf3'], ['Nc6']]);
+    expect(d.averageMoveSeconds()).toBeNull();
+  });
+  it('null on a move list too short to measure', () => {
+    list([['e4', '9:58'], ['e5', '9:57']]);
+    expect(d.averageMoveSeconds()).toBeNull();
+  });
+  it('averages each side\'s own clock drops', () => {
+    // White's clock: 9:58 → 9:54 → 9:50, so 4s per move.
+    // Black's:       9:54 → 9:46 → 9:38, so 8s per move. Mean 6.
+    list([['e4', '9:58'], ['e5', '9:54'], ['Nf3', '9:54'], ['Nc6', '9:46'],
+          ['Bb5', '9:50'], ['a6', '9:38']]);
+    expect(d.averageMoveSeconds()).toBeCloseTo(6, 1);
+  });
+  it('ignores a clock that went up (increment) and keeps the rest', () => {
+    list([['e4', '9:50'], ['e5', '9:40'], ['Nf3', '9:55'], ['Nc6', '9:36'],
+          ['Bc4', '9:51'], ['Nf6', '9:32']]);
+    expect(d.averageMoveSeconds()).toBeCloseTo(4, 1);
+  });
+  it('reads tenths', () => { expect(d.parseClock('0:59.4')).toBeCloseTo(59.4, 1); });
+});
+
 // ── getTurnFromMoveList ──────────────────────────────────────────────────────
 // Shapes taken from a live chess.com analysis board, not invented.
 describe('getTurnFromMoveList', () => {
