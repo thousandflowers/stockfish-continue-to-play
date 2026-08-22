@@ -15,6 +15,10 @@ function warn(...args) { if (DEBUG) console.warn('[SF+]', ...args); }
 log('content script loaded — v' + chrome.runtime.getManifest().version + ' —', location.href);
 
 const ENGINE_DEPTH = 12;
+// An instant reply reads as a glitch, not as a move. Hold every engine move for
+// at least this long (measured from when it started thinking) so the game has
+// the rhythm of a game.
+const ENGINE_MIN_THINK_MS = 650;
 const ENGINE_INIT_TIMEOUT_MS = 15000;
 const REFRESH_INTERVAL_MS = 1000;
 const POLL_INTERVAL_MS = 200;
@@ -73,7 +77,7 @@ function initEngine() {
           warn('worker error', e);
           if (!settled) { fail(e); return; }
           // Crashed mid-game — full teardown so overlays/handlers don't linger.
-          if (chesscomState) endGame('Engine crashed — click Continue to retry');
+          if (chesscomState) endGame('Game stopped', 'the engine crashed');
           else teardownEngine();
         };
         sfWorker.postMessage('uci');
@@ -112,7 +116,10 @@ function onEngineMessage({ data }) {
 
   if (data.startsWith('bestmove')) {
     const move = data.split(' ')[1];
-    onEngineMove(move && move !== '(none)' ? move : null);
+    const uci = move && move !== '(none)' ? move : null;
+    const session = sessionId;
+    const rest = Math.max(0, ENGINE_MIN_THINK_MS - (Date.now() - _thinkStart));
+    setTimeout(() => { if (session === sessionId) onEngineMove(uci); }, rest);
     return;
   }
   // Perft output: legal-move lines, then a "Nodes searched:" terminator.
@@ -139,8 +146,11 @@ function enginePosition() {
   return 'position fen ' + startFen + (moves.length ? ' moves ' + moves.join(' ') : '');
 }
 
+let _thinkStart = 0;
+
 function engineThink() {
   updateStatus('Stockfish thinking…');
+  _thinkStart = Date.now();
   postCmd('go depth ' + ENGINE_DEPTH);
 }
 
@@ -172,9 +182,9 @@ function finishMateProbe() {
   _mateSide = null; _mateScore = null;
   if (!st) return;
   const youLost = side === st.playerSide;
-  if (score === 'mate') { endGame(youLost ? 'Checkmate — Stockfish wins' : 'Checkmate — you win!'); return; }
-  if (score === 'draw') { endGame('Stalemate — the game is a draw'); return; }
-  endGame('Game over — no legal moves left');
+  if (score === 'mate') { endGame(youLost ? 'Stockfish won' : 'You won!', 'by checkmate'); return; }
+  if (score === 'draw') { endGame('Draw', 'by stalemate'); return; }
+  endGame('Game over', 'no legal moves left');
 }
 
 // ── Board lookup ─────────────────────────────────────────────────────────────
@@ -258,6 +268,7 @@ function showChesscomBoard(fen, color, strengthSetting) {
     chesscomState = {
       startFen: fen, moves: [], boardData: fenToBoard(fen),
       selectedSq: null, playerSide, engineSide, sideToMove, board,
+      strengthSetting, finished: false,
     };
 
     injectBoardStyle();
@@ -298,6 +309,7 @@ function hideChesscomBoard() {
   if (chesscomState?._refreshTimer) clearInterval(chesscomState._refreshTimer);
   document.getElementById('sfct-modal-blocker')?.remove();
   document.getElementById('sfct-badge')?.remove();
+  document.getElementById('sfct-result')?.remove();
   // Dropping this un-hides Chess.com's own pieces again.
   document.getElementById('sfct-board-style')?.remove();
   chesscomState?._restoreOpponentName?.();
@@ -311,9 +323,42 @@ function hideChesscomBoard() {
   chesscomState = null;
 }
 
-function endGame(msg) {
+// End of game. The final position STAYS on the board — a game that just ended
+// does not reset itself — and the result arrives as a modal over the board, the
+// way Chess.com announces one. Everything is only torn down when the player
+// dismisses that modal.
+function endGame(title, subtitle) {
+  const st = chesscomState;
+  if (!st) return;
+  st.finished = true;
+  st._ptrCleanup?.();
+  st._ptrCleanup = null;
+  st.selectedSq = null;
+  teardownEngine();
+  _legalMoves = null;
+  _perftMoves = null;
+  syncBoardToState();
+  updateStatus('Game over');
+  showResultModal(title, subtitle || '');
+}
+
+// Give the board back to Chess.com.
+function dismissResult() {
+  const card = document.getElementById('sfct-result');
+  card?._sfctCleanup?.();
+  card?.remove();
   hideChesscomBoard();
-  showBanner('♟ ' + msg);
+}
+
+function rematch() {
+  const st = chesscomState;
+  if (!st) return;
+  const { startFen, playerSide, strengthSetting } = st;
+  const card = document.getElementById('sfct-result');
+  card?._sfctCleanup?.();
+  card?.remove();
+  hideChesscomBoard();
+  showChesscomBoard(startFen, playerSide === 'w' ? 'white' : 'black', strengthSetting);
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────
@@ -460,7 +505,7 @@ function ownsPiece(piece) {
 
 function handleSquareClick(sq) {
   const st = chesscomState;
-  if (!st || st.sideToMove !== st.playerSide) return;
+  if (!st || st.finished || st.sideToMove !== st.playerSide) return;
   if (!_legalMoves) { updateStatus('Calculating…'); return; }
 
   const piece = st.boardData[sq];
@@ -478,7 +523,7 @@ function handleSquareClick(sq) {
 
 function handleDragMove(from, to) {
   const st = chesscomState;
-  if (!st || st.sideToMove !== st.playerSide) return;
+  if (!st || st.finished || st.sideToMove !== st.playerSide) return;
   if (!_legalMoves) { updateStatus('Calculating…'); return; }
   if (!ownsPiece(st.boardData[from])) return;
   if (!isLegalMove(_legalMoves, from, to)) { updateStatus('Illegal move'); return; }
@@ -508,7 +553,7 @@ function onEngineMove(uci) {
   const res = applyUciMove(st.boardData, uci);
   // Our board map and the engine's position disagree — the game can only freeze
   // from here, so stop cleanly instead of leaving the badge stuck on "thinking".
-  if (!res.moved) { warn('engine move on empty square', uci); endGame('Board out of sync — click Continue to restart'); return; }
+  if (!res.moved) { warn('engine move on empty square', uci); endGame('Game stopped', 'the board and the engine went out of sync'); return; }
   st.boardData = res.board;
   st.moves.push(uci);
   st.sideToMove = st.playerSide;
@@ -521,6 +566,7 @@ function onEngineMove(uci) {
 // ── Status badge & banner ────────────────────────────────────────────────────
 function showStatusBadge(text) {
   document.getElementById('sfct-badge')?.remove();
+  document.getElementById('sfct-result')?.remove();
   const badge = document.createElement('div');
   badge.id = 'sfct-badge';
   Object.assign(badge.style, {
@@ -534,7 +580,7 @@ function showStatusBadge(text) {
   span.id = 'sfct-badge-text';
   span.textContent = '♟ ' + text;
   badge.appendChild(span);
-  badge.onclick = hideChesscomBoard;
+  badge.onclick = dismissResult;
   document.body.appendChild(badge);
 }
 
@@ -545,14 +591,18 @@ function updateStatus(text) {
   el.textContent = '♟ ' + who + text;
 }
 
+function ensureAnimStyle() {
+  if (document.getElementById('sfctplay-style')) return;
+  const s = document.createElement('style');
+  s.id = 'sfctplay-style';
+  s.textContent = '@keyframes _sfctin{from{opacity:0;top:4px}to{opacity:1;top:16px}}' +
+    '@keyframes _sfctpop{from{opacity:0;transform:translate(-50%,-50%) scale(.92)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}';
+  document.head.appendChild(s);
+}
+
 function showBanner(text, ms) {
   document.getElementById('sfctplay-banner')?.remove();
-  if (!document.getElementById('sfctplay-style')) {
-    const s = document.createElement('style');
-    s.id = 'sfctplay-style';
-    s.textContent = '@keyframes _sfctin{from{opacity:0;top:4px}to{opacity:1;top:16px}}';
-    document.head.appendChild(s);
-  }
+  ensureAnimStyle();
   const el = document.createElement('div');
   el.id = 'sfctplay-banner';
   Object.assign(el.style, {
@@ -574,6 +624,79 @@ function showBanner(text, ms) {
   setTimeout(() => el.remove(), ms || BANNER_TIMEOUT_MS);
 }
 
+// ── Result modal ─────────────────────────────────────────────────────────────
+// Chess.com announces a result with a card over the board, so this one looks
+// like that: same dark card, same green primary button, centred on the board.
+// It lives in <body>, never inside Chess.com's own DOM — inserting nodes into
+// their Vue-rendered modal made Vue throw "insertBefore … not a child".
+function centreOnBoard(el) {
+  const b = chesscomState?.board;
+  const r = b ? b.getBoundingClientRect() : null;
+  if (!r || !r.width) { el.style.left = '50%'; el.style.top = '40%'; el.style.transform = 'translate(-50%,-50%)'; return; }
+  el.style.left = (r.left + r.width / 2) + 'px';
+  el.style.top = (r.top + r.height / 2) + 'px';
+  el.style.transform = 'translate(-50%,-50%)';
+}
+
+function showResultModal(title, subtitle) {
+  document.getElementById('sfct-result')?.remove();
+  ensureAnimStyle();
+  const card = document.createElement('div');
+  card.id = 'sfct-result';
+  card.setAttribute('data-sfct', 'result');
+  Object.assign(card.style, {
+    position: 'fixed', zIndex: '999998', width: 'min(330px,80vw)',
+    background: '#262421', borderRadius: '12px', overflow: 'hidden',
+    boxShadow: '0 12px 40px rgba(0,0,0,.6)', color: '#fff',
+    fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+    animation: '_sfctpop .18s ease-out',
+  });
+
+  const head = document.createElement('div');
+  Object.assign(head.style, { background: '#302e2c', padding: '18px 20px', textAlign: 'center' });
+  const h = document.createElement('div');
+  h.textContent = title;
+  Object.assign(h.style, { fontSize: '22px', fontWeight: '700', lineHeight: '1.2' });
+  const sub = document.createElement('div');
+  sub.textContent = subtitle;
+  Object.assign(sub.style, { fontSize: '13px', opacity: '.6', marginTop: '4px' });
+  head.append(h, sub);
+
+  const body = document.createElement('div');
+  Object.assign(body.style, { padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: '8px' });
+  const mk = (text, primary) => {
+    const b = document.createElement('button');
+    b.textContent = text;
+    Object.assign(b.style, {
+      width: '100%', minHeight: '44px', border: 'none', borderRadius: '8px',
+      fontSize: '15px', fontWeight: '700', cursor: 'pointer',
+      background: primary ? '#81b64c' : 'rgba(255,255,255,.09)',
+      color: primary ? '#fff' : 'rgba(255,255,255,.85)',
+      boxShadow: primary ? 'inset 0 -3px 0 rgba(0,0,0,.18)' : 'none',
+    });
+    return b;
+  };
+  const again = mk('Play again vs Stockfish', true);
+  again.onclick = rematch;
+  const back = mk('Back to Chess.com', false);
+  back.onclick = dismissResult;
+  const note = document.createElement('div');
+  note.textContent = 'The final position stays on the board until you leave.';
+  Object.assign(note.style, { fontSize: '11px', opacity: '.45', textAlign: 'center', marginTop: '2px' });
+  body.append(again, back, note);
+
+  card.append(head, body);
+  document.body.appendChild(card);
+  centreOnBoard(card);
+  const reposition = () => centreOnBoard(card);
+  window.addEventListener('resize', reposition);
+  window.addEventListener('scroll', reposition, { passive: true });
+  card._sfctCleanup = () => {
+    window.removeEventListener('resize', reposition);
+    window.removeEventListener('scroll', reposition);
+  };
+}
+
 // ── Inject the "Continue vs Computer" button ─────────────────────────────────
 // The button must appear even when Chess.com renames its game-over modal classes.
 // Strategy: try a native, in-modal placement that matches Chess.com's styling; if
@@ -586,7 +709,7 @@ function onContinueClick(e) {
     if (active === false) return;
     const fen = getFEN();
     if (!fen) { showBanner('Position not found.'); return; }
-    document.getElementById('sfctplay-btn')?.remove(); // hide the trigger while playing
+    removeTrigger(); // the trigger goes away while you play
     showChesscomBoard(fen, getPlayerColor(), strength);
   });
 }
@@ -640,28 +763,64 @@ function injectButtons() {
   const modal = findGameOverModal();
   if (!modal) { injectFloatingButton(); return; }
 
-  // Sit next to Chess.com's own buttons ("New Game" / "Rematch" / "Game Review"),
-  // whatever they are called this month.
+  // Line the trigger up under Chess.com's own buttons but keep the node in
+  // <body>: their modal is Vue-rendered, and inserting into it made Vue throw
+  // "insertBefore … not a child of this node" on its next patch.
   const anchor = modalButtonAnchor(modal);
-  if (anchor?.parentElement) {
-    const btn = makeNativeButton(anchor);
-    btn.style.width = '100%';
-    anchor.parentElement.insertBefore(btn, anchor.nextSibling);
-    log('button injected (next to', anchor.getAttribute('aria-label') || anchor.textContent.trim(), ')');
-    return;
-  }
-
-  // Modal with no buttons of its own — append into it so the trigger still shows.
-  const btn = makeNativeButton(null);
+  const btn = makeNativeButton(anchor);
   btn.style.width = '100%';
-  modal.appendChild(btn);
-  log('button injected (appended to modal)');
+
+  // A strip that continues Chess.com's card: same width, same background,
+  // rounded off at the bottom, sitting flush against it. The nodes stay in
+  // <body> — their modal is Vue-rendered, and inserting into it made Vue throw
+  // "insertBefore … not a child of this node" on its next patch.
+  const dock = document.createElement('div');
+  dock.id = 'sfctplay-dock';
+  Object.assign(dock.style, {
+    position: 'fixed', zIndex: '999997', boxSizing: 'border-box',
+    padding: '0 20px 16px', borderRadius: '0 0 12px 12px',
+    background: solidBackground(modal),
+    boxShadow: '0 12px 32px rgba(0,0,0,.45)',
+  });
+  dock.appendChild(btn);
+  document.body.appendChild(dock);
+  alignTrigger(btn);
+  log('button injected (docked under the modal)');
 }
 
 // A reloaded/updated extension orphans this content script: every chrome.* call
 // then throws "Extension context invalidated".
 function extensionAlive() {
   try { return !!chrome.runtime?.id; } catch (_) { return false; }
+}
+
+// Keep the dock flush with the bottom of Chess.com's card, at its exact width,
+// so the two read as one panel.
+function alignTrigger() {
+  const dock = document.getElementById('sfctplay-dock');
+  const modal = findGameOverModal();
+  if (!dock) return;
+  if (!modal) { removeTrigger(); return; }
+  const r = modal.getBoundingClientRect();
+  if (!r.width) return;
+  dock.style.left = r.left + 'px';
+  dock.style.top = (r.bottom - 1) + 'px';
+  dock.style.width = r.width + 'px';
+}
+
+// The modal container itself is often transparent — walk up until something
+// actually paints, so the dock matches the card instead of flashing white.
+function solidBackground(el) {
+  for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
+    const bg = getComputedStyle(n).backgroundColor;
+    if (bg && !/rgba\(0, 0, 0, 0\)|transparent/.test(bg)) return bg;
+  }
+  return '#262421';
+}
+
+function removeTrigger() {
+  document.getElementById('sfctplay-btn')?.remove();
+  document.getElementById('sfctplay-dock')?.remove();
 }
 
 function tryInject() {
@@ -671,12 +830,11 @@ function tryInject() {
   if (chesscomState) return;
   const existing = document.getElementById('sfctplay-btn');
   if (!isGameOver()) {
-    // Remove a lingering floating fallback once the game-over surface is gone and
-    // we are not actively playing (e.g. after the user starts a rematch).
-    if (existing?.dataset.sfctFloating && !chesscomState) existing.remove();
+    // The game-over surface is gone (rematch, new game) — so is our trigger.
+    if (existing) removeTrigger();
     return;
   }
-  if (existing) return;
+  if (existing) { alignTrigger(); return; } // the modal moves with the layout
   log('game over detected — injecting button');
   // Re-check chesscomState inside the callback: a tick that fired just before
   // the user clicked Continue would otherwise land after the game started and
@@ -696,7 +854,7 @@ const pollTimer = setInterval(tryInject, POLL_INTERVAL_MS);
 const navTimer = setInterval(() => {
   if (location.href === lastUrl) return;
   lastUrl = location.href;
-  document.getElementById('sfctplay-btn')?.remove();
+  removeTrigger();
   document.getElementById('sfctplay-banner')?.remove();
   hideChesscomBoard();
   tryInject();
@@ -706,7 +864,7 @@ const navTimer = setInterval(() => {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !changes.active) return;
   if (changes.active.newValue === false) {
-    document.getElementById('sfctplay-btn')?.remove();
+    removeTrigger();
     hideChesscomBoard();
   } else {
     tryInject();
