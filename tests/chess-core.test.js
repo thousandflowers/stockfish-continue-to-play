@@ -32,6 +32,42 @@ describe('fenToBoard', () => {
   });
 });
 
+describe('diffBoards', () => {
+  const board = (fen) => c.fenToBoard(fen);
+  it('a quiet move is one moved piece, nothing added or removed', () => {
+    const before = board(START);
+    const after = c.applyUciMove(before, 'e2e4').board;
+    const d = c.diffBoards(before, after);
+    expect(d.moved).toEqual([{ from: 'e2', to: 'e4', piece: 'P' }]);
+    expect(d.added).toEqual([]);
+    expect(d.removed).toEqual([]);
+  });
+  it('a capture moves the capturer and removes the captured piece', () => {
+    const before = board('4k3/8/8/8/8/8/4r3/4K2R w K - 0 1');
+    const after = c.applyUciMove(before, 'e1e2').board; // Kxe2
+    const d = c.diffBoards(before, after);
+    expect(d.moved).toEqual([{ from: 'e1', to: 'e2', piece: 'K' }]);
+    expect(d.removed).toEqual(['e2']); // the rook node has to go, the king takes its square
+  });
+  it('castling moves both king and rook', () => {
+    const before = board('4k3/8/8/8/8/8/8/4K2R w K - 0 1');
+    const after = c.applyUciMove(before, 'e1g1').board;
+    const d = c.diffBoards(before, after);
+    expect(d.moved.map(m => m.from + m.to).sort()).toEqual(['e1g1', 'h1f1']);
+  });
+  it('promotion removes the pawn and adds the new piece', () => {
+    const before = board('4k3/P7/8/8/8/8/8/4K3 w - - 0 1');
+    const after = c.applyUciMove(before, 'a7a8q').board;
+    const d = c.diffBoards(before, after);
+    expect(d.removed).toEqual(['a7']);
+    expect(d.added).toEqual([{ sq: 'a8', piece: 'Q' }]);
+  });
+  it('no change means no work for the renderer', () => {
+    const b = board(START);
+    expect(c.diffBoards(b, { ...b })).toEqual({ moved: [], added: [], removed: [] });
+  });
+});
+
 describe('applyUciMove', () => {
   it('does not mutate the input board (immutable)', () => {
     const b = { e2: 'P' };

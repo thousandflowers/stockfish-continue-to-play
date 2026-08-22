@@ -27,8 +27,10 @@ let lastUrl = location.href;
 // chesscomState = { startFen, moves[], boardData, selectedSq, playerSide,
 //                   engineSide, sideToMove, board, _ptrCleanup, _refreshTimer }
 let chesscomState = null;
-let _perftMoves = null; // null = idle, [] = collecting `go perft 1` output
-let _legalMoves = null; // UCI legal moves for the side to move, or null
+let _perftMoves = null;   // null = idle, [] = collecting `go perft 1` output
+let _legalMoves = null;   // UCI legal moves for the side to move, or null
+let _mateSide = null;     // the side with no moves, while working out mate vs stalemate
+let _mateScore = null;    // 'mate' | 'draw' — what the engine said about that position
 
 // ── Stockfish engine (Web Worker) ───────────────────────────────────────────
 let sfWorker = null;
@@ -99,6 +101,15 @@ function onEngineMessage({ data }) {
     if (initEngine._resolve) initEngine._resolve();
     return;
   }
+  if (_mateSide) { // a mate/stalemate probe is in flight — read its verdict
+    if (data.startsWith('info') && / score /.test(data)) {
+      if (/ score mate 0\b/.test(data)) _mateScore = 'mate';
+      else if (/ score cp 0\b/.test(data)) _mateScore = 'draw';
+    }
+    if (data.startsWith('bestmove')) finishMateProbe();
+    return;
+  }
+
   if (data.startsWith('bestmove')) {
     const move = data.split(' ')[1];
     onEngineMove(move && move !== '(none)' ? move : null);
@@ -111,7 +122,7 @@ function onEngineMessage({ data }) {
     if (data.startsWith('Nodes searched:')) {
       _legalMoves = _perftMoves || [];
       _perftMoves = null;
-      if (_legalMoves.length === 0) { endGame('Game over — no legal moves (checkmate or stalemate)'); return; }
+      if (_legalMoves.length === 0) { probeMate(chesscomState?.sideToMove); return; }
       if (chesscomState?.selectedSq) syncBoardToState();
       return;
     }
@@ -137,6 +148,33 @@ function requestLegalMoves() {
   _legalMoves = null;
   _perftMoves = [];
   postCmd('go perft 1');
+}
+
+// A side with no legal moves is either checkmated or stalemated. Ask the engine
+// what the OTHER side could play from the same placement: if one of those moves
+// lands on the stuck king, the king is attacked and it is checkmate.
+// A side with no legal moves is either checkmated or stalemated, and the board
+// alone cannot tell you which. Searching the position does: Stockfish scores a
+// mated side as `score mate 0` and a stalemated one as `score cp 0`.
+// (Asking it to enumerate the other side's moves does not work — it never
+// generates a capture of the enemy king, so every mate looked like stalemate.)
+function probeMate(side) {
+  if (!chesscomState || !side) { endGame('Game over'); return; }
+  _mateSide = side;
+  _mateScore = null;
+  postCmd(enginePosition());
+  postCmd('go depth 1');
+}
+
+function finishMateProbe() {
+  const st = chesscomState;
+  const side = _mateSide, score = _mateScore;
+  _mateSide = null; _mateScore = null;
+  if (!st) return;
+  const youLost = side === st.playerSide;
+  if (score === 'mate') { endGame(youLost ? 'Checkmate — Stockfish wins' : 'Checkmate — you win!'); return; }
+  if (score === 'draw') { endGame('Stalemate — the game is a draw'); return; }
+  endGame('Game over — no legal moves left');
 }
 
 // ── Board lookup ─────────────────────────────────────────────────────────────
@@ -176,13 +214,33 @@ function injectBoardStyle() {
     // Chess.com's own pieces are hidden, never removed: dropping this style tag on
     // stop hands the board straight back instead of leaving it blank.
     'wc-chess-board [class*="piece"]:not([data-sfct]),chess-board [class*="piece"]:not([data-sfct]){display:none!important}',
+    '[data-sfct="piece"]{transition:transform var(--move-animation-duration,180ms) ease-out}',
     '.sfct-sel{box-shadow:inset 0 0 0 3px #ffd700,0 0 12px rgba(255,215,0,.5);border-radius:4px}',
     '.sfct-dot::after{content:"";position:absolute;width:28%;height:28%;border-radius:50%;background:rgba(0,0,0,.18);top:36%;left:36%}',
   ].join('');
   document.head.appendChild(bs);
 }
 
-function showChesscomBoard(fen, color) {
+// Engine strength: 'auto' matches the opponent you just played, anything else is
+// a fixed rating ('max' = no limit at all).
+function engineStrength(setting) {
+  if (setting === 'max') return { label: 'full strength', uciElo: null };
+  const rating = setting && setting !== 'auto' ? parseInt(setting, 10) : getOpponentElo();
+  return { label: String(rating), uciElo: eloToUCIElo(rating) };
+}
+
+// Rename the opponent on the board so it is obvious who you are now playing.
+// Returns a function that puts the original name back.
+function labelOpponentAsEngine(text) {
+  const row = opponentRow();
+  const el = row?.querySelector('[class*="username"], [class*="tagline"], [class*="name"]');
+  if (!el) return null;
+  const original = el.textContent;
+  el.textContent = text;
+  return () => { try { el.textContent = original; } catch (_) {} };
+}
+
+function showChesscomBoard(fen, color, strengthSetting) {
   try {
     hideChesscomBoard();
     removeGameOverModal();
@@ -190,7 +248,7 @@ function showChesscomBoard(fen, color) {
     const sideToMove = fen.split(' ')[1] || 'w';
     const playerSide = color === 'white' ? 'w' : 'b';
     const engineSide = playerSide === 'w' ? 'b' : 'w';
-    const uciElo = eloToUCIElo(getOpponentElo());
+    const strength = engineStrength(strengthSetting);
 
     const session = ++sessionId;
     const board = findActiveBoard();
@@ -206,13 +264,21 @@ function showChesscomBoard(fen, color) {
     syncBoardToState();
     attachPointerHandlers();
     startRefreshTimer();
-    showStatusBadge(sideToMove === 'w' ? 'White to move' : 'Black to move');
+    chesscomState._restoreOpponentName = labelOpponentAsEngine(`Stockfish (${strength.label})`);
+    showStatusBadge(`Stockfish ${strength.label} · loading engine…`);
+    // Say plainly that a new game has started — the board looks the same as the
+    // one that just ended, so without this it is not obvious anything changed.
+    showBanner(`♟ New game vs Stockfish (${strength.label}) — you play ` +
+               (playerSide === 'w' ? 'White' : 'Black'), 6000);
 
     initEngine().then(() => {
       if (session !== sessionId || !chesscomState) return; // stopped or restarted while loading
-      postCmd('setoption name UCI_LimitStrength value true');
-      postCmd(`setoption name UCI_Elo value ${uciElo}`);
+      if (strength.uciElo) {
+        postCmd('setoption name UCI_LimitStrength value true');
+        postCmd(`setoption name UCI_Elo value ${strength.uciElo}`);
+      }
       postCmd(enginePosition());
+      chesscomState.engineLabel = strength.label;
       if (sideToMove === engineSide) engineThink();
       else { updateStatus('Your move'); requestLegalMoves(); }
     }).catch(e => {
@@ -234,6 +300,7 @@ function hideChesscomBoard() {
   document.getElementById('sfct-badge')?.remove();
   // Dropping this un-hides Chess.com's own pieces again.
   document.getElementById('sfct-board-style')?.remove();
+  chesscomState?._restoreOpponentName?.();
   if (chesscomState?.board) chesscomState.board.style.touchAction = '';
   // Drop our overlay pieces/dots so the board shows Chess.com's again.
   document.querySelectorAll('[data-sfct]').forEach(el => el.remove());
@@ -250,51 +317,76 @@ function endGame(msg) {
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────
+// Move the piece nodes that moved; add and remove only what changed. Rebuilding
+// every node on every move is what made play look jumpy — a piece has to keep
+// its node for the board's transition to animate it across.
 let _sfSyncing = false;
+
+function makePieceNode(pc) {
+  const el = document.createElement('div');
+  el.setAttribute('data-sfct', 'piece');
+  el.dataset.pc = pc;
+  el.className = `piece ${pc === pc.toUpperCase() ? 'w' : 'b'}${pc.toLowerCase()}`;
+  el.style.cssText = 'position:absolute;top:0;left:0;width:12.5%;height:12.5%;z-index:5';
+  return el;
+}
 
 function syncBoardToState() {
   if (!chesscomState?.board || _sfSyncing) return;
   _sfSyncing = true;
   try {
-    const { board, boardData, selectedSq } = chesscomState;
-    const rect = board.getBoundingClientRect();
-    if (!rect.width) return; // board hidden/detached — every piece would stack on a1
+    const st = chesscomState;
+    const { board, boardData, selectedSq } = st;
     const flipped = isFlipped(board);
-    const sqSize = rect.width / 8;
     const dests = (selectedSq && _legalMoves) ? legalDestsFrom(_legalMoves, selectedSq) : null;
 
-    // Only our own overlays are removed — Chess.com's pieces are CSS-hidden.
-    board.querySelectorAll(':scope > [data-sfct]').forEach(el => el.remove());
-
-    const xy = (f, r) => {
-      const x = flipped ? (7 - f) * sqSize : f * sqSize;
-      const y = flipped ? (r - 1) * sqSize : (8 - r) * sqSize;
-      return `translate(${x}px,${y}px)`;
-    };
-
-    for (const sq in boardData) {
+    // A square is 12.5% of the board, and a transform percentage is relative to
+    // the element's own size — so whole-percent steps land on squares at any
+    // board size, and a resize needs no recalculation at all.
+    const place = (el, sq) => {
       const f = sq.charCodeAt(0) - 97;
       const r = parseInt(sq[1], 10);
-      const pc = boardData[sq];
-      const colorPrefix = pc === pc.toUpperCase() ? 'w' : 'b';
-      const d = document.createElement('div');
-      d.setAttribute('data-sfct', '1');
-      d.className = `piece ${colorPrefix}${pc.toLowerCase()} square-${f + 1}${r}${selectedSq === sq ? ' sfct-sel' : ''}`;
-      d.style.cssText = `position:absolute;top:0;left:0;width:12.5%;height:12.5%;transform:${xy(f, r)};z-index:5;transition:none!important`;
-      board.appendChild(d);
+      el.dataset.sq = sq;
+      el.className = el.className.replace(/\s*square-\d\d/, '') + ` square-${f + 1}${r}`;
+      el.style.transform = `translate(${(flipped ? 7 - f : f) * 100}%,${(flipped ? r - 1 : 8 - r) * 100}%)`;
+    };
+
+    const nodes = new Map();
+    board.querySelectorAll(':scope > [data-sfct="piece"]').forEach(el => nodes.set(el.dataset.sq, el));
+
+    if (st._flipped !== flipped) { // the user flipped the board — everything moves
+      st._flipped = flipped;
+      nodes.forEach((el, sq) => place(el, sq));
     }
 
-    if (dests) {
-      for (const dest of dests) {
-        const f = dest.charCodeAt(0) - 97;
-        const r = parseInt(dest[1], 10);
-        if (f < 0 || f > 7 || r < 1 || r > 8) continue;
-        const dot = document.createElement('div');
-        dot.setAttribute('data-sfct', '1');
-        dot.className = 'sfct-dot';
-        dot.style.cssText = `position:absolute;top:0;left:0;width:12.5%;height:12.5%;transform:${xy(f, r)};z-index:4;pointer-events:none`;
-        board.appendChild(dot);
-      }
+    const prev = {};
+    nodes.forEach((el, sq) => { prev[sq] = el.dataset.pc; });
+    const { moved, added, removed } = diffBoards(prev, boardData);
+
+    for (const sq of removed) { nodes.get(sq)?.remove(); nodes.delete(sq); }
+    for (const m of moved) {
+      const el = nodes.get(m.from);
+      if (!el) continue;
+      nodes.delete(m.from);
+      place(el, m.to);
+      nodes.set(m.to, el);
+    }
+    for (const a of added) {
+      const el = makePieceNode(a.piece);
+      place(el, a.sq);
+      board.appendChild(el);
+      nodes.set(a.sq, el);
+    }
+    nodes.forEach((el, sq) => el.classList.toggle('sfct-sel', sq === selectedSq));
+
+    board.querySelectorAll(':scope > [data-sfct="dot"]').forEach(el => el.remove());
+    for (const dest of dests || []) {
+      const dot = document.createElement('div');
+      dot.setAttribute('data-sfct', 'dot');
+      dot.className = 'sfct-dot';
+      dot.style.cssText = 'position:absolute;top:0;left:0;width:12.5%;height:12.5%;z-index:4;pointer-events:none';
+      place(dot, dest);
+      board.appendChild(dot);
     }
   } finally { _sfSyncing = false; }
 }
@@ -357,7 +449,7 @@ function startRefreshTimer() {
     }
     // A Chess.com re-render can wipe our overlay children without replacing the
     // board node — put them back.
-    if (!cur.querySelector(':scope > [data-sfct]')) syncBoardToState();
+    if (!cur.querySelector(':scope > [data-sfct="piece"]')) syncBoardToState();
   }, REFRESH_INTERVAL_MS);
 }
 
@@ -412,7 +504,7 @@ function makePlayerMove(from, to) {
 function onEngineMove(uci) {
   const st = chesscomState;
   if (!st) return;
-  if (!uci) { endGame('Stockfish has no legal moves — game over'); return; }
+  if (!uci) { probeMate(st.engineSide); return; } // mate or stalemate — find out which
   const res = applyUciMove(st.boardData, uci);
   // Our board map and the engine's position disagree — the game can only freeze
   // from here, so stop cleanly instead of leaving the badge stuck on "thinking".
@@ -448,10 +540,12 @@ function showStatusBadge(text) {
 
 function updateStatus(text) {
   const el = document.getElementById('sfct-badge-text');
-  if (el) el.textContent = '♟ ' + text;
+  if (!el) return;
+  const who = chesscomState?.engineLabel ? `Stockfish ${chesscomState.engineLabel} · ` : '';
+  el.textContent = '♟ ' + who + text;
 }
 
-function showBanner(text) {
+function showBanner(text, ms) {
   document.getElementById('sfctplay-banner')?.remove();
   if (!document.getElementById('sfctplay-style')) {
     const s = document.createElement('style');
@@ -477,7 +571,7 @@ function showBanner(text) {
   el.append(msg, hint);
   el.onclick = () => el.remove();
   document.body.appendChild(el);
-  setTimeout(() => el.remove(), BANNER_TIMEOUT_MS);
+  setTimeout(() => el.remove(), ms || BANNER_TIMEOUT_MS);
 }
 
 // ── Inject the "Continue vs Computer" button ─────────────────────────────────
@@ -488,12 +582,12 @@ function showBanner(text) {
 
 function onContinueClick(e) {
   e.preventDefault(); e.stopPropagation();
-  chrome.storage.local.get(['active'], ({ active }) => {
+  chrome.storage.local.get(['active', 'strength'], ({ active, strength }) => {
     if (active === false) return;
     const fen = getFEN();
     if (!fen) { showBanner('Position not found.'); return; }
     document.getElementById('sfctplay-btn')?.remove(); // hide the trigger while playing
-    showChesscomBoard(fen, getPlayerColor());
+    showChesscomBoard(fen, getPlayerColor(), strength);
   });
 }
 
