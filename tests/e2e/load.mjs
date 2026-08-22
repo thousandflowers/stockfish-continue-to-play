@@ -98,6 +98,11 @@ const sq = (file, rank) => ({ // white orientation
   x: boardBox.x + (file - 0.5) * (boardBox.width / 8),
   y: boardBox.y + (8 - rank + 0.5) * (boardBox.height / 8),
 });
+const overlaySquares = () => page.$$eval('#board [data-sfct]', els =>
+  els.map(el => (el.className.match(/\b(w|b)[kqrbnp]\b/) || [])[0] + '@' +
+                (el.className.match(/square-\d\d/) || [])[0]).filter(s => !s.startsWith('undefined')).sort());
+
+const before = await overlaySquares();
 const from = sq(5, 2), to = sq(5, 4); // e2 → e4
 await page.mouse.move(from.x, from.y); await page.mouse.down(); await page.mouse.up();
 await page.mouse.move(to.x, to.y); await page.mouse.down(); await page.mouse.up();
@@ -107,7 +112,20 @@ await page.waitForFunction(
   () => /Your move/.test(document.getElementById('sfct-badge')?.textContent || ''),
   null, { timeout: 45000 }
 ).catch(() => fail('Stockfish never replied: ' + logs.join(' | ')));
+const after = await overlaySquares();
+// The pawn really moved on the Chess.com board itself: e2 (square-52) is empty
+// and a white pawn now sits on e4 (square-54).
+if (before.includes('wp@square-54') || !before.includes('wp@square-52')) fail('bad start position: ' + before);
+if (!after.includes('wp@square-54')) fail('player pawn did not land on e4: ' + after);
+if (after.includes('wp@square-52')) fail('player pawn still on e2: ' + after);
+// Stockfish's reply moved a black piece.
+const blackBefore = before.filter(s => s.startsWith('b')).join();
+const blackAfter = after.filter(s => s.startsWith('b')).join();
+if (blackBefore === blackAfter) fail('Stockfish reply not rendered on the board: ' + blackAfter);
 console.log('PASS 6/7: player move accepted + Stockfish replied');
+console.log('         white pawn e2→e4 on the Chess.com board; black changed:',
+  before.filter(x => !after.includes(x)).join(' ') || '(none)', '→',
+  after.filter(x => !before.includes(x)).join(' '));
 
 // 8. stopping restores the board (no leftover overlay)
 await page.locator('#sfct-badge').click();
