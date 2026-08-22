@@ -39,7 +39,9 @@ describe('fixture: chesscom-gameover-pieces', () => {
 
 describe('fixture: chesscom-elo-strategies', () => {
   beforeAll(() => { document.body.innerHTML = loadFixture('chesscom-elo-strategies.html'); });
-  it('strategy 1 beats strategy 2', () => { expect(d.getOpponentElo()).toBe(1850); });
+  it('reads the opponent row (player-top), not the first rating on the page', () => {
+    expect(d.getOpponentElo()).toBe(1920);
+  });
   it('no FEN without a board element', () => { expect(d.getFEN()).toBeNull(); });
   it('no game over', () => { expect(d.isGameOver()).toBe(false); });
 });
@@ -97,28 +99,15 @@ describe('getFEN', () => {
     expect(d.getFEN()).toBe('rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1');
   });
 
-  it('2: React internal state', () => {
+  // A content script runs in an isolated world: page expandos on DOM nodes and
+  // page globals are invisible to it. Probing a live chess.com page confirmed
+  // those lookups never fire, so getFEN() must not grow them back.
+  it('ignores page-world state that a content script cannot actually see', () => {
     const b = document.createElement('wc-chess-board');
-    b[Object.keys(b).find(k => k.startsWith('__')) || '__react$x'] = { setupFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1' };
+    b.__reactFiber$x = { game: { fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1' } };
     document.body.appendChild(b);
-    expect(d.getFEN()).toBe('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
-  });
-
-  it('2b: prefers the live position over setupFen (start position)', () => {
-    const b = document.createElement('wc-chess-board');
-    const advanced = 'rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2';
-    b[Object.keys(b).find(k => k.startsWith('__')) || '__react$x'] = {
-      setupFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', // start
-      game: { fen: advanced }, // live
-    };
-    document.body.appendChild(b);
-    expect(d.getFEN()).toBe(advanced);
-  });
-
-  it('3: window state', () => {
-    document.body.appendChild(document.createElement('wc-chess-board'));
     window.chessground = { state: { fen: '4k3/8/8/8/8/8/8/4K3 w - - 0 1' } };
-    expect(d.getFEN()).toBe('4k3/8/8/8/8/8/8/4K3 w - - 0 1');
+    expect(d.getFEN()).toBeNull(); // no attribute, no pieces → nothing to read
     delete window.chessground;
   });
 
@@ -176,9 +165,22 @@ describe('getOpponentElo', () => {
     document.body.appendChild(el);
     expect(d.getOpponentElo()).toBe(1740);
   });
-  it('strategy 9: window.__PRELOADED_STATE__', () => {
+  it('parenthesised bot rating, as chess.com renders it today', () => {
+    document.body.innerHTML =
+      '<div class="player-row-component player-row-top">' +
+      '<span class="cc-user-username-white">Cyclops</span>' +
+      '<span class="cc-text-medium cc-user-rating-white">(250)</span></div>';
+    expect(d.getOpponentElo()).toBe(250);
+  });
+  it('prefers the opponent row over the player\'s own rating', () => {
+    document.body.innerHTML =
+      '<div class="player-row-component player-row-top"><span class="cc-user-rating-white">1180</span></div>' +
+      '<div class="player-row-component player-row-bottom"><span class="cc-user-rating-white">2400</span></div>';
+    expect(d.getOpponentElo()).toBe(1180);
+  });
+  it('ignores page-world state a content script cannot see', () => {
     window.__PRELOADED_STATE__ = { game: { opponent: { rating: 2150 } } };
-    expect(d.getOpponentElo()).toBe(2150);
+    expect(d.getOpponentElo()).toBe(1500);
     delete window.__PRELOADED_STATE__;
   });
   it('rejects out-of-range ratings', () => {

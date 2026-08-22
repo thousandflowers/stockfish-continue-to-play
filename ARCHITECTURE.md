@@ -37,13 +37,28 @@ Tried in order; the first that yields a position wins:
 | # | Source |
 |:--|:-------|
 | 1 | `game-fen` / `fen` attribute on `wc-chess-board` (a full, authoritative FEN) |
-| 2 | React/internal state on the board element (`setupFen` / `game.fen` / …) |
-| 3 | Global app state (`window.chessground.state.fen` / `window.board.game.fen` / `window.game.fen`) |
-| 4 | Light-DOM piece `<div>`s (`[class*="piece"][class*="square-"]`) → assembled FEN, castling estimated from home squares |
-| 5 | Same piece parsing inside the board's `shadowRoot` |
+| 2 | Light-DOM piece `<div>`s (`[class*="piece"][class*="square-"]`) → assembled FEN, castling estimated from home squares |
+| 3 | Same piece parsing inside the board's `shadowRoot` |
 
-Sources 1–3 carry real castling/en-passant data, so they are preferred over the scraped
-placement.
+Source 1 carries real castling/en-passant data, so it wins over the scraped placement.
+
+**What actually runs on chess.com today is source 2.** A probe run against live
+chess.com pages (a finished game and `/play/computer`, extension loaded) showed the
+board element carries only `class`, `id` and `style` — no FEN attribute. Earlier
+versions also tried React state on the board element and page globals like
+`window.chessground`; both were removed because a content script runs in an isolated
+world where page expandos and page globals are invisible, so those branches could
+never fire. Side-effect of scraping: side-to-move and castling rights are heuristics
+until the first move, after which Stockfish tracks them from the move list.
+
+## Opponent rating
+
+`getOpponentElo()` reads the first rating-looking number (`^\(?\d{3,4}\)?$`, chess.com
+renders bot ratings as `(250)`) inside the opponent's player row, matched as
+`[class*="player"][class*="top"]` — chess.com has renamed that row repeatedly
+(`board-player-component` → `player-component player-top` → `player-row-top`), so the
+selector matches the durable shape rather than one generation's class names. Falls back
+to the strongest explicit rating node on the page, then to 1500.
 
 ## Project structure
 
