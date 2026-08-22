@@ -215,14 +215,29 @@ await page.route('https://www.chess.com/game/live/mate', route =>
 await page.goto('https://www.chess.com/game/live/mate', { waitUntil: 'domcontentloaded' });
 await page.locator('#sfctplay-btn').waitFor({ timeout: 10000 }).catch(() => fail('no button on the mate page'));
 await page.locator('#sfctplay-btn').click();
-await page.waitForFunction(
-  () => /Checkmate|Stalemate/.test(document.getElementById('sfctplay-banner')?.textContent || ''),
-  null, { timeout: 90000 }
-).catch(async () => fail('game end never declared; badge=' +
-  (await page.locator('#sfct-badge').textContent().catch(() => '(none)'))));
-const verdict = (await page.locator('#sfctplay-banner').textContent()).replace('(click to close)', '').trim();
-if (!/Checkmate — Stockfish wins/.test(verdict)) fail('wrong verdict: ' + verdict);
-console.log('PASS 11: loss detected and named —', verdict);
+await page.locator('#sfct-result').waitFor({ timeout: 90000 }).catch(async () => fail(
+  'no result modal; badge=' + (await page.locator('#sfct-badge').textContent().catch(() => '(none)'))));
+const verdict = (await page.locator('#sfct-result').textContent()).trim();
+if (!/Stockfish won/.test(verdict) || !/by checkmate/.test(verdict)) fail('wrong verdict: ' + verdict);
+console.log('PASS 11: loss announced in a modal —', verdict.slice(0, 34));
+
+// 12. the final position stays put, the way a finished Chess.com game does —
+// the board must not snap back to Chess.com's pieces the moment you are mated.
+const frozen = await page.locator('#board [data-sfct="piece"]').count();
+if (frozen < 10) fail(`final position was cleared on game over (${frozen} pieces left)`);
+const stillHidden = await page.$$eval('#board [class*="piece"]:not([data-sfct])',
+  els => els.filter(el => getComputedStyle(el).display !== 'none').length);
+if (stillHidden !== 0) fail('Chess.com pieces came back while the result was still up');
+console.log('PASS 12: final position stays on the board —', frozen, 'pieces held');
+
+// 13. …and leaving hands the board back
+await page.getByRole('button', { name: 'Back to Chess.com' }).click();
+await page.waitForTimeout(500);
+if (await page.locator('[data-sfct]').count() !== 0) fail('overlay left behind after closing the result');
+const handedBack = await page.$$eval('#board [class*="piece"]:not([data-sfct])',
+  els => els.filter(el => getComputedStyle(el).display !== 'none').length);
+if (handedBack < 10) fail(`Chess.com pieces not restored after closing: ${handedBack}`);
+console.log('PASS 13: closing the result restores', handedBack, 'Chess.com pieces');
 
 console.log('\nALL CHECKS PASSED');
 if (logs.length) console.log('--- page logs ---\n' + logs.join('\n'));
