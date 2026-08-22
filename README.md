@@ -22,6 +22,17 @@ Chess.com: Game Over  →  [♟ Continue vs Computer]  →  play the position vs
 
 ---
 
+## Why I built this
+
+In fast games — bullet, blitz — opponents resign or disconnect all the time, often
+in positions where the most interesting part is still ahead. I wanted to keep playing
+from exactly where we left off, on the same board, without setting anything up.
+
+Earlier versions redirected to Lichess to do this. Since v3.0.0 the engine runs
+in-page, so the game never leaves Chess.com.
+
+---
+
 ## Features
 
 - **Inline on the real board** — no redirect, no new tab; you keep playing on the Chess.com board you were already on.
@@ -72,6 +83,17 @@ install from source as above.
 1. Finish (or lose/win) a game on Chess.com.
 2. On the game-over screen, click **♟ Continue vs Computer**.
 3. Play. The badge in the top-right shows whose turn it is; click it to stop.
+
+---
+
+## Roadmap
+
+| | Status |
+|---|:---:|
+| Chess.com inline play vs Stockfish | ✅ |
+| Adaptive difficulty from opponent rating | ✅ |
+| Chrome Web Store release | ◻︎ planned |
+| Firefox Add-ons release | ◻︎ planned |
 
 ---
 
