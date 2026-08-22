@@ -132,7 +132,36 @@ await page.locator('#sfct-badge').click();
 await page.waitForTimeout(300);
 const left = await page.locator('[data-sfct]').count();
 if (left !== 0) fail(`overlay pieces left after stop: ${left}`);
-console.log('PASS 8: stop cleans up overlay');
+// …and Chess.com's own pieces are visible again, not stripped out: stopping must
+// hand the board back, not leave it blank.
+const restored = await page.$$eval('#board [class*="piece"]:not([data-sfct])',
+  els => els.filter(el => getComputedStyle(el).display !== 'none').length);
+if (restored < 10) fail(`Chess.com pieces not restored after stop: ${restored} visible`);
+console.log('PASS 8: stop cleans up overlay and restores', restored, 'Chess.com pieces');
+
+// 9. regression: stopping while the engine is still loading used to leave the
+// abandoned init's 15 s timeout armed — it fired long after the user had stopped
+// and popped an "Engine failed to load." banner over the restored board.
+const restart = async () => {
+  await page.locator('#sfctplay-btn').waitFor({ timeout: 10000 });
+  await page.locator('#sfctplay-btn').click();
+  await page.waitForSelector('#sfct-badge', { timeout: 10000 });
+};
+await restart();
+await page.locator('#sfct-badge').click(); // stop while the engine is still loading
+await page.waitForTimeout(16000);          // outlive the abandoned init's 15 s timeout
+const stale = await page.locator('#sfctplay-banner').textContent().catch(() => '');
+if (/Engine failed/.test(stale || '')) fail('bogus engine-failure banner after stopping mid-load');
+console.log('PASS 9: no stale engine-failure banner after stopping mid-load');
+
+// 10. and the next game still starts normally
+await restart();
+await page.waitForFunction(
+  () => /Your move|thinking/.test(document.getElementById('sfct-badge')?.textContent || ''),
+  null, { timeout: 40000 }
+).catch(() => fail('engine never became ready after a mid-load stop'));
+if (await page.locator('#board [data-sfct]').count() < 10) fail('board lost its pieces after restart');
+console.log('PASS 10: restart after a mid-load stop works —', await page.locator('#sfct-badge').textContent());
 
 console.log('\nALL CHECKS PASSED');
 if (logs.length) console.log('--- page logs ---\n' + logs.join('\n'));

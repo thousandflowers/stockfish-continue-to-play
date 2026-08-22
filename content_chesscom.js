@@ -35,9 +35,16 @@ let sfWorker = null;
 let workerReady = false;
 let cmdQueue = [];
 let initPromise = null;
+let initTimer = null;
+// Bumped on every stop. A slow init that settles after the user stopped (or
+// restarted) must not touch the current session — the abandoned init's 15 s
+// timeout used to fire long after the fact and pop "Engine failed to load."
+// over the restored board.
+let sessionId = 0;
 
 // Terminate the worker and reset all engine state so the next init starts clean.
 function teardownEngine() {
+  if (initTimer) { clearTimeout(initTimer); initTimer = null; }
   if (sfWorker) {
     try { sfWorker.postMessage('quit'); } catch (_) {}
     try { sfWorker.terminate(); } catch (_) {}
@@ -68,9 +75,14 @@ function initEngine() {
           else teardownEngine();
         };
         sfWorker.postMessage('uci');
-        setTimeout(() => { if (!workerReady) fail(new Error('Engine init timeout')); }, ENGINE_INIT_TIMEOUT_MS);
+        initTimer = setTimeout(() => { if (!workerReady) fail(new Error('Engine init timeout')); }, ENGINE_INIT_TIMEOUT_MS);
         // resolve happens in onEngineMessage on 'readyok'
-        initEngine._resolve = () => { if (!settled) { settled = true; resolve(); } };
+        initEngine._resolve = () => {
+          if (settled) return;
+          settled = true;
+          if (initTimer) { clearTimeout(initTimer); initTimer = null; }
+          resolve();
+        };
       })
       .catch(fail);
   });
@@ -161,6 +173,9 @@ function injectBoardStyle() {
   const bs = document.createElement('style');
   bs.id = 'sfct-board-style';
   bs.textContent = [
+    // Chess.com's own pieces are hidden, never removed: dropping this style tag on
+    // stop hands the board straight back instead of leaving it blank.
+    'wc-chess-board [class*="piece"]:not([data-sfct]),chess-board [class*="piece"]:not([data-sfct]){display:none!important}',
     '.sfct-sel{box-shadow:inset 0 0 0 3px #ffd700,0 0 12px rgba(255,215,0,.5);border-radius:4px}',
     '.sfct-dot::after{content:"";position:absolute;width:28%;height:28%;border-radius:50%;background:rgba(0,0,0,.18);top:36%;left:36%}',
   ].join('');
@@ -177,6 +192,7 @@ function showChesscomBoard(fen, color) {
     const engineSide = playerSide === 'w' ? 'b' : 'w';
     const uciElo = eloToUCIElo(getOpponentElo());
 
+    const session = ++sessionId;
     const board = findActiveBoard();
     if (!board) { showBanner('Board not found.'); return; }
     board.style.touchAction = 'none';
@@ -193,12 +209,18 @@ function showChesscomBoard(fen, color) {
     showStatusBadge(sideToMove === 'w' ? 'White to move' : 'Black to move');
 
     initEngine().then(() => {
+      if (session !== sessionId || !chesscomState) return; // stopped or restarted while loading
       postCmd('setoption name UCI_LimitStrength value true');
       postCmd(`setoption name UCI_Elo value ${uciElo}`);
       postCmd(enginePosition());
       if (sideToMove === engineSide) engineThink();
       else { updateStatus('Your move'); requestLegalMoves(); }
-    }).catch(e => { warn('engine init failed', e); hideChesscomBoard(); showBanner('Engine failed to load.'); });
+    }).catch(e => {
+      warn('engine init failed', e);
+      if (session !== sessionId) return; // belongs to a game the user already stopped
+      hideChesscomBoard();
+      showBanner('Engine failed to load.');
+    });
   } catch (e) {
     warn('showChesscomBoard error', e);
     showBanner('Error: ' + (e?.message || e));
@@ -210,9 +232,12 @@ function hideChesscomBoard() {
   if (chesscomState?._refreshTimer) clearInterval(chesscomState._refreshTimer);
   document.getElementById('sfct-modal-blocker')?.remove();
   document.getElementById('sfct-badge')?.remove();
-  // Drop our overlay pieces/dots, otherwise stopping leaves the board frozen on
-  // our render with Chess.com's own pieces still stripped out.
+  // Dropping this un-hides Chess.com's own pieces again.
+  document.getElementById('sfct-board-style')?.remove();
+  if (chesscomState?.board) chesscomState.board.style.touchAction = '';
+  // Drop our overlay pieces/dots so the board shows Chess.com's again.
   document.querySelectorAll('[data-sfct]').forEach(el => el.remove());
+  sessionId++;
   teardownEngine();
   _perftMoves = null;
   _legalMoves = null;
@@ -237,11 +262,8 @@ function syncBoardToState() {
     const sqSize = rect.width / 8;
     const dests = (selectedSq && _legalMoves) ? legalDestsFrom(_legalMoves, selectedSq) : null;
 
-    // Remove our previous overlays + any Chess.com pieces that crept back in.
+    // Only our own overlays are removed — Chess.com's pieces are CSS-hidden.
     board.querySelectorAll(':scope > [data-sfct]').forEach(el => el.remove());
-    board.querySelectorAll(':scope > .piece, :scope > [class*="piece"]').forEach(el => {
-      if (!el.hasAttribute('data-sfct')) el.remove();
-    });
 
     const xy = (f, r) => {
       const x = flipped ? (7 - f) * sqSize : f * sqSize;
@@ -332,8 +354,9 @@ function startRefreshTimer() {
       if (nb) { chesscomState.board = nb; nb.style.touchAction = 'none'; syncBoardToState(); }
       return;
     }
-    const dirty = cur.querySelector(':scope > .piece:not([data-sfct]), :scope > [class*="piece"]:not([data-sfct])');
-    if (dirty) syncBoardToState();
+    // A Chess.com re-render can wipe our overlay children without replacing the
+    // board node — put them back.
+    if (!cur.querySelector(':scope > [data-sfct]')) syncBoardToState();
   }, REFRESH_INTERVAL_MS);
 }
 
@@ -390,7 +413,9 @@ function onEngineMove(uci) {
   if (!st) return;
   if (!uci) { endGame('Stockfish has no legal moves — game over'); return; }
   const res = applyUciMove(st.boardData, uci);
-  if (!res.moved) { warn('engine move on empty square', uci); return; }
+  // Our board map and the engine's position disagree — the game can only freeze
+  // from here, so stop cleanly instead of leaving the badge stuck on "thinking".
+  if (!res.moved) { warn('engine move on empty square', uci); endGame('Board out of sync — click Continue to restart'); return; }
   st.boardData = res.board;
   st.moves.push(uci);
   st.sideToMove = st.playerSide;
@@ -562,10 +587,9 @@ function tryInject() {
 }
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────
-const observer = new MutationObserver(() => tryInject());
-function startObserver() { observer.observe(document.body, { childList: true, subtree: true }); }
-startObserver();
-
+// ponytail: a 200 ms poll, not a MutationObserver — Chess.com mutates the DOM
+// ~10×/s (clocks, move list) and re-running tryInject on each one cost CPU for
+// at most 200 ms of extra latency on a modal that the user is reading anyway.
 const pollTimer = setInterval(tryInject, POLL_INTERVAL_MS);
 
 // SPA navigation: Chess.com swaps pages without a reload.
@@ -589,9 +613,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
-window.addEventListener('unload', () => {
+window.addEventListener('pagehide', () => {
   clearInterval(pollTimer);
   clearInterval(navTimer);
-  observer.disconnect();
   hideChesscomBoard();
 });
