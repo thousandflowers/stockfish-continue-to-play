@@ -143,7 +143,20 @@ console.log('PASS 8: stop cleans up overlay and restores', restored, 'Chess.com 
 // abandoned init's 15 s timeout armed — it fired long after the user had stopped
 // and popped an "Engine failed to load." banner over the restored board.
 const restart = async () => {
-  await page.locator('#sfctplay-btn').waitFor({ timeout: 10000 });
+  await page.locator('#sfctplay-btn').waitFor({ timeout: 10000 }).catch(async () => {
+    const diag = await page.evaluate(() => {
+      const b = document.getElementById('sfctplay-btn');
+      const m = document.querySelector('.game-over-modal-content');
+      return {
+        btn: b ? b.outerHTML.slice(0, 160) : null,
+        btnDisplay: b ? getComputedStyle(b).display : null,
+        modalDisplay: m ? getComputedStyle(m).display : null,
+        blocker: !!document.getElementById('sfct-modal-blocker'),
+        badge: !!document.getElementById('sfct-badge'),
+      };
+    });
+    fail('trigger button never came back: ' + JSON.stringify(diag));
+  });
   await page.locator('#sfctplay-btn').click();
   await page.waitForSelector('#sfct-badge', { timeout: 10000 });
 };
