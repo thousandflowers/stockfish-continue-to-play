@@ -543,31 +543,24 @@ function injectFloatingButton() {
 function injectButtons() {
   if (document.getElementById('sfctplay-btn')) return;
 
-  const modal = document.querySelector(
-    '.game-over-buttons-component, .game-over-modal-content, .game-over-modal-component, ' +
-    '[data-cy="game-over-dialog"], [class*="game-over-modal"], .game-over-container'
-  );
+  const modal = findGameOverModal();
   if (!modal) { injectFloatingButton(); return; }
 
-  const sibling = modal.querySelector(
-    'a[data-cy="game-over-modal-game-review-button"], ' +
-    'button[data-cy="game-over-modal-new-game-button"], ' +
-    'button[data-cy="game-over-modal-rematch-button"], ' +
-    '.game-over-buttons-buttons button, .game-over-buttons-buttons a'
-  );
-
-  if (sibling?.parentElement) {
-    const btn = makeNativeButton(sibling);
-    sibling.parentElement.insertBefore(btn, sibling);
-    log('button injected (before sibling)');
+  // Sit next to Chess.com's own buttons ("New Game" / "Rematch" / "Game Review"),
+  // whatever they are called this month.
+  const anchor = modalButtonAnchor(modal);
+  if (anchor?.parentElement) {
+    const btn = makeNativeButton(anchor);
+    btn.style.width = '100%';
+    anchor.parentElement.insertBefore(btn, anchor.nextSibling);
+    log('button injected (next to', anchor.getAttribute('aria-label') || anchor.textContent.trim(), ')');
     return;
   }
 
-  // Known anchor gone — append into the modal's button area so it still shows.
-  const container = modal.querySelector('.game-over-buttons-buttons') || modal;
-  const btn = makeNativeButton(container.querySelector('button, a'));
+  // Modal with no buttons of its own — append into it so the trigger still shows.
+  const btn = makeNativeButton(null);
   btn.style.width = '100%';
-  container.appendChild(btn);
+  modal.appendChild(btn);
   log('button injected (appended to modal)');
 }
 
