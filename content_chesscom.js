@@ -8,14 +8,11 @@
 // Pure helpers live in lib/chess-core.js (logic) and lib/chess-dom.js (scraping),
 // loaded before this file by the manifest. They are referenced here as globals.
 
-const DEBUG = true; // diagnostic build — set back to false once injection is confirmed
+const DEBUG = false;
 function log(...args) { if (DEBUG) console.log('[SF+]', ...args); }
 function warn(...args) { if (DEBUG) console.warn('[SF+]', ...args); }
 
-// One-line load banner (always on): confirms the content script injected and
-// reveals the URL it matched — the fastest way to tell "script not running" from
-// "DOM selectors stale". Quieted together with DEBUG once things work.
-console.log('[SF+] content script loaded — v3.0.0 —', location.href);
+log('content script loaded — v' + chrome.runtime.getManifest().version + ' —', location.href);
 
 const ENGINE_DEPTH = 12;
 const ENGINE_INIT_TIMEOUT_MS = 15000;
@@ -213,6 +210,9 @@ function hideChesscomBoard() {
   if (chesscomState?._refreshTimer) clearInterval(chesscomState._refreshTimer);
   document.getElementById('sfct-modal-blocker')?.remove();
   document.getElementById('sfct-badge')?.remove();
+  // Drop our overlay pieces/dots, otherwise stopping leaves the board frozen on
+  // our render with Chess.com's own pieces still stripped out.
+  document.querySelectorAll('[data-sfct]').forEach(el => el.remove());
   teardownEngine();
   _perftMoves = null;
   _legalMoves = null;
@@ -546,6 +546,9 @@ function injectButtons() {
 }
 
 function tryInject() {
+  // While playing, the game-over modal is only CSS-hidden, so isGameOver() stays
+  // true — without this guard the trigger button reappears over the live board.
+  if (chesscomState) return;
   const existing = document.getElementById('sfctplay-btn');
   if (!isGameOver()) {
     // Remove a lingering floating fallback once the game-over surface is gone and
