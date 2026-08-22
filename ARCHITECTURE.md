@@ -51,6 +51,17 @@ world where page expandos and page globals are invisible, so those branches coul
 never fire. Side-effect of scraping: side-to-move and castling rights are heuristics
 until the first move, after which Stockfish tracks them from the move list.
 
+## Side to move
+
+Only needed when the position is scraped (the usual case). Chess.com renders one
+node per ply, tagged with the colour that played it (`node white-move main-line-ply`
+/ `node black-move …`), so `getTurnFromMoveList()` reads the **last** ply node. The
+previous parity count over `[data-whole-move-number]` was wrong by construction —
+that attribute marks move *pairs*, so a live board reported "black to move" both
+after `1. e4` and after `1… e5`. When there is no move list, the board's last-move
+highlight squares are used: whichever colour's piece stands on one of them just
+moved, so the other side is up.
+
 ## Opponent rating
 
 `getOpponentElo()` reads the first rating-looking number (`^\(?\d{3,4}\)?$`, chess.com

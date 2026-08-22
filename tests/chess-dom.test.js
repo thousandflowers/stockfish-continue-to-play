@@ -156,6 +156,30 @@ describe('getPlayerColor', () => {
   });
 });
 
+// ── getTurnFromMoveList ──────────────────────────────────────────────────────
+// Shapes taken from a live chess.com analysis board, not invented.
+describe('getTurnFromMoveList', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  const movelist = (...plies) => {
+    document.body.innerHTML = '<div class="analysis-view-movelist move-list">' +
+      plies.map((san, i) => `<div class="node ${i % 2 ? 'black' : 'white'}-move main-line-ply">${san}</div>`).join('') +
+      '</div>';
+  };
+  it('white by default with no move list', () => { expect(d.getTurnFromMoveList()).toBe('w'); });
+  it('black to move after White played', () => { movelist('e4'); expect(d.getTurnFromMoveList()).toBe('b'); });
+  it('white to move after Black replied', () => { movelist('e4', 'e5'); expect(d.getTurnFromMoveList()).toBe('w'); });
+  it('black to move again on the next White move', () => {
+    movelist('e4', 'e5', 'Nf3'); expect(d.getTurnFromMoveList()).toBe('b');
+  });
+  it('falls back to the last-move highlight when there is no move list', () => {
+    const b = document.createElement('wc-chess-board');
+    b.innerHTML = '<div class="highlight square-52"></div><div class="highlight square-54"></div>' +
+                  '<div class="piece wp square-54"></div>';
+    document.body.appendChild(b);
+    expect(d.getTurnFromMoveList()).toBe('b'); // a white pawn just landed there
+  });
+});
+
 // ── getOpponentElo strategies ────────────────────────────────────────────────
 describe('getOpponentElo', () => {
   afterEach(() => { document.body.innerHTML = ''; });
