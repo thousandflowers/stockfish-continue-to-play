@@ -13,4 +13,4 @@ assignees: ''
 
 **Alternative considerate**
 
-**Piattaforma**: Chess.com / Lichess / Entrambe
+**Piattaforma**: Chess.com

@@ -10,7 +10,7 @@ assignees: ''
 **Descrivi il bug**
 
 **Per riprodurre**
-1. Vai su Chess.com/Lichess
+1. Vai su Chess.com
 2. Gioca una partita
 3. ...
 4. Errore
@@ -24,4 +24,4 @@ assignees: ''
 **Info extra**
 - Chess.com board flipped? Sì/No
 - Partita finita per: abbandono / timeout / matto
-- Si vede il bottone "Continua su Lichess"? Sì/No
+- Si vede il bottone "Continue vs Computer"? Sì/No
