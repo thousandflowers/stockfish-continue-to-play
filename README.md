@@ -4,7 +4,7 @@
 
 [![Chrome](https://img.shields.io/badge/Chrome-MV3-4285F4?logo=googlechrome&logoColor=white)](#installation)
 [![Firefox](https://img.shields.io/badge/Firefox-MV3-FF7139?logo=firefoxbrowser&logoColor=white)](#firefox)
-[![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
+[![License](https://img.shields.io/badge/License-GPLv3-blue)](LICENSE)
 
 ---
 
@@ -37,11 +37,11 @@ in-page, so the game never leaves Chess.com.
 
 - **Inline on the real board** - no redirect, no new tab; you keep playing on the Chess.com board you were already on.
 - **Adaptive difficulty** - Stockfish's `UCI_Elo` is matched to the opponent's rating read from the page.
-- **No servers, no telemetry** - Stockfish runs entirely in your browser via WebAssembly. Nothing is uploaded.
+- **No servers, no telemetry** - Stockfish runs entirely in your browser. Nothing is uploaded; it works offline.
 - **Click or drag** - move pieces either way; legal destinations are highlighted; promotions auto-queen.
 - **Correct chess** - castling, en-passant, checkmate/stalemate and repetition are handled by the engine itself (moves are replayed to Stockfish).
 - **On/off toggle** - a popup to disable it when you don't want it.
-- **Open source** - MIT.
+- **Open source** - GPLv3, because it bundles Stockfish.
 
 ---
 
@@ -110,4 +110,24 @@ model, difficulty mapping, and project structure.
 
 ## License
 
-MIT - see [LICENSE](LICENSE).
+**GPLv3** - see [LICENSE](LICENSE).
+
+This extension bundles [Stockfish](https://github.com/official-stockfish/Stockfish), which
+is licensed under the GNU General Public License v3. Distributing Stockfish inside the
+package makes the whole package a combined work, so this project is GPLv3 too: you may use,
+study, modify and redistribute it under those terms, and anyone you pass it to gets the same
+rights and the right to the corresponding source.
+
+Credit where it is due: Stockfish is the work of **the Stockfish developers** (T. Romstad,
+M. Costalba, J. Kiiski, G. Linscott and many other contributors - see the project's AUTHORS
+file), the JavaScript port is [nmrugg/stockfish.js](https://github.com/nmrugg/stockfish.js),
+and the neural network is by Linmiao Xu. Their notices are reproduced verbatim in
+[LICENSE.stockfish](LICENSE.stockfish).
+
+Exactly which build is bundled, its checksum, and what is and is not known about where it
+came from: [vendor/STOCKFISH-PROVENANCE.md](vendor/STOCKFISH-PROVENANCE.md).
+
+Up to and including v3.0.0 this project was released under the MIT licence, and code
+contributed in that period was contributed under it. MIT asks that its copyright notice be
+preserved, so it is: see [LICENSE.MIT](LICENSE.MIT). That code is redistributed here under
+the GPLv3, which MIT permits.
