@@ -1,3 +1,57 @@
+Stockfish — licence and copyright notices for the engine bundled with this
+extension as `stockfish.js`.
+
+-------------------------------------------------------------------------------
+1. Upstream Stockfish copyright notice, quoted verbatim from
+   https://github.com/official-stockfish/Stockfish (src/main.cpp, retrieved
+   2026-08-23):
+
+/*
+  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+
+  Stockfish is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  Stockfish is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+-------------------------------------------------------------------------------
+2. Notice carried by the bundled build itself, quoted verbatim from the first
+   eleven lines of `stockfish.js`:
+
+/*!
+ * Stockfish.js 18 (c) 2026, Chess.com, LLC
+ * https://github.com/nmrugg/stockfish.js
+ * License: GPLv3
+ *
+ * Based on Stockfish (c) T. Romstad, M. Costalba, J. Kiiski, G. Linscott and other contributors.
+ * https://github.com/official-stockfish/Stockfish
+ *
+ * Nets by Linmiao Xu (linrock)
+ * https://tests.stockfishchess.org/nns?network_name=nn-9067e33176e
+ */
+
+The engine reports itself, over UCI, as:
+
+    id name Stockfish 18 Lite ASM.JS
+    id author the Stockfish developers (see AUTHORS file)
+
+-------------------------------------------------------------------------------
+3. The GNU General Public License version 3 follows, byte-identical to the
+   Copying.txt that ships with Stockfish
+   (https://raw.githubusercontent.com/official-stockfish/Stockfish/master/Copying.txt,
+   retrieved 2026-08-23) and to https://www.gnu.org/licenses/gpl-3.0.txt.
+-------------------------------------------------------------------------------
+
                     GNU GENERAL PUBLIC LICENSE
                        Version 3, 29 June 2007
 
@@ -672,28 +726,3 @@ may consider it more useful to permit linking proprietary applications with
 the library.  If this is what you want to do, use the GNU Lesser General
 Public License instead of this License.  But first, please read
 <https://www.gnu.org/licenses/why-not-lgpl.html>.
-
--------------------------------------------------------------------------------
-The text above is the unmodified GNU General Public License version 3, as
-published at https://www.gnu.org/licenses/gpl-3.0.txt. The notice below records
-how it applies to this project.
-
-    Stockfish Continue to Play — keep playing a finished Chess.com game
-    against a local Stockfish engine.
-    Copyright (C) 2025-2026 Eugenio Zamengo Pontrelli
-
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-This project is licensed under the GPL because it bundles Stockfish, which is
-GPLv3. See LICENSE.stockfish and vendor/STOCKFISH-PROVENANCE.md.
