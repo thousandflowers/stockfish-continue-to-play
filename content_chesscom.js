@@ -490,7 +490,9 @@ function attachPointerHandlers() {
     return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
   };
   const onDown = (e) => {
-    if (e.target?.closest?.('#sfct-badge, #sfctplay-banner, #sfctplay-btn')) return;
+    if (e.target?.closest?.('#sfct-badge, #sfctplay-banner, #sfctplay-btn, #sfct-result')) return;
+    if (e.target?.closest?.('[data-sfct="promo"]')) return; // the picker handles its own clicks
+    if (cancelPromotion()) { e.preventDefault(); e.stopPropagation(); return; }
     const b = currentBoard();
     if (!b || !inside(b, e)) return;
     const sq = computeSquareFromClick(b, e.clientX, e.clientY);
@@ -550,6 +552,59 @@ function refuseMove() {
   mark.classList.add('sfct-shake');
 }
 
+// The four-piece column Chess.com pops over the promotion square. Queen first,
+// then knight, rook, bishop — its order, since that is the order people expect.
+function askPromotion(to, side, onPick) {
+  const st = chesscomState;
+  if (!st?.board) { onPick('q'); return; }
+  document.querySelectorAll('[data-sfct="promo"]').forEach(el => el.remove());
+  const flipped = isFlipped(st.board);
+  const f = to.charCodeAt(0) - 97;
+  const r = parseInt(to[1], 10);
+  const col = document.createElement('div');
+  col.setAttribute('data-sfct', 'promo');
+  const fromTop = flipped ? r === 1 : r === 8; // the column hangs off the promotion edge
+  // Four squares tall, one square wide, in board units — a piece is 12.5% of the
+  // board, so the column is exactly 50%. No aspect-ratio: Chess.com's own .piece
+  // rule is absolutely positioned, and the cells would collapse to zero height.
+  col.style.cssText = `position:absolute;left:${(flipped ? 7 - f : f) * 12.5}%;width:12.5%;height:50%;` +
+    `z-index:9;background:#f8f8f8;border-radius:6px;box-shadow:0 10px 28px rgba(0,0,0,.5);` +
+    `overflow:hidden;` + (fromTop ? 'top:0;' : 'bottom:0;');
+  for (const p of ['q', 'n', 'r', 'b']) {
+    const cell = document.createElement('div');
+    // Marked as ours: the style that hides Chess.com's pieces keys off the
+    // absence of data-sfct, and these carry Chess.com's own `piece` class to
+    // borrow its sprite.
+    cell.setAttribute('data-sfct', 'promo-piece');
+    cell.className = `piece ${side}${p}`;
+    cell.style.cssText = 'position:relative;width:100%;height:25%;left:auto;top:auto;' +
+      'transform:none;background-size:100% 100%;cursor:pointer';
+    cell.onmouseenter = () => { cell.style.background = 'rgba(0,0,0,.08)'; };
+    cell.onmouseleave = () => { cell.style.background = ''; };
+    cell.onclick = (e) => { e.preventDefault(); e.stopPropagation(); col.remove(); onPick(p); };
+    col.appendChild(cell);
+  }
+  st.board.appendChild(col);
+}
+
+function cancelPromotion() {
+  const open = document.querySelector('[data-sfct="promo"]');
+  if (!open) return false;
+  open.remove();
+  if (chesscomState) { chesscomState.selectedSq = null; syncBoardToState(); updateStatus('Your move'); }
+  return true;
+}
+
+// Every player move goes through here: promotions ask first, everything else
+// goes straight to the board.
+function beginMove(from, to) {
+  const st = chesscomState;
+  if (!st) return;
+  if (!isPromotion(st.boardData, from, to)) { makePlayerMove(from, to); return; }
+  updateStatus('Choose a piece');
+  askPromotion(to, st.playerSide, (piece) => makePlayerMove(from, to, piece));
+}
+
 function ownsPiece(piece) {
   if (!piece || !chesscomState) return false;
   return chesscomState.playerSide === 'w' ? piece === piece.toUpperCase() : piece === piece.toLowerCase();
@@ -569,9 +624,14 @@ function handleSquareClick(sq) {
     st.selectedSq = sq; syncBoardToState(); updateStatus('Select destination'); return;
   }
   if (sel === sq) { st.selectedSq = null; syncBoardToState(); updateStatus('Your move'); return; }
-  if (ownsPiece(piece)) { st.selectedSq = sq; syncBoardToState(); updateStatus('Select destination'); return; }
+  if (ownsPiece(piece)) {
+    // King onto your own rook is how Chess.com castles.
+    const castle = castleDestination(st.boardData, _legalMoves, sel, sq);
+    if (castle) { st.selectedSq = null; beginMove(sel, castle); return; }
+    st.selectedSq = sq; syncBoardToState(); updateStatus('Select destination'); return;
+  }
   if (!isLegalMove(_legalMoves, sel, sq)) { st.selectedSq = null; syncBoardToState(); refuseMove(); return; }
-  makePlayerMove(sel, sq);
+  beginMove(sel, sq);
 }
 
 function handleDragMove(from, to) {
@@ -579,19 +639,21 @@ function handleDragMove(from, to) {
   if (!st || st.finished || st.sideToMove !== st.playerSide) return;
   if (!_legalMoves) { updateStatus('Calculating…'); return; }
   if (!ownsPiece(st.boardData[from])) return;
+  const castle = castleDestination(st.boardData, _legalMoves, from, to);
+  if (castle) { st.selectedSq = null; beginMove(from, castle); return; }
   if (!isLegalMove(_legalMoves, from, to)) { refuseMove(); return; }
   st.selectedSq = null;
-  makePlayerMove(from, to);
+  beginMove(from, to);
 }
 
-function makePlayerMove(from, to) {
+function makePlayerMove(from, to, promo) {
   const st = chesscomState;
   if (!st) return;
   if (st.turnStart) { // your own pace, in case the finished game showed no clocks
     st.yourPaces.push(Date.now() - st.turnStart);
     if (st.yourPaces.length > PACE_SAMPLES) st.yourPaces.shift();
   }
-  const uci = toUci(st.boardData, from, to);
+  const uci = toUci(st.boardData, from, to, promo);
   const res = applyUciMove(st.boardData, uci);
   if (!res.moved) return;
   st.boardData = res.board;

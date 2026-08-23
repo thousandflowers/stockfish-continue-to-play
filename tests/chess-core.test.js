@@ -32,6 +32,38 @@ describe('fenToBoard', () => {
   });
 });
 
+describe('isPromotion / toUci', () => {
+  const pawns = () => c.fenToBoard('4k3/P7/8/8/8/8/7p/4K3 w - - 0 1');
+  it('a pawn reaching the last rank promotes', () => {
+    const b = pawns();
+    expect(c.isPromotion(b, 'a7', 'a8')).toBe(true);
+    expect(c.isPromotion(b, 'h2', 'h1')).toBe(true);
+    expect(c.isPromotion(b, 'e1', 'e2')).toBe(false);
+  });
+  it('queens by default, honours an explicit choice', () => {
+    const b = pawns();
+    expect(c.toUci(b, 'a7', 'a8')).toBe('a7a8q');
+    expect(c.toUci(b, 'a7', 'a8', 'n')).toBe('a7a8n');
+    expect(c.toUci(b, 'e1', 'e2', 'n')).toBe('e1e2'); // not a promotion, no suffix
+  });
+});
+
+describe('castleDestination', () => {
+  const both = () => c.fenToBoard('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1');
+  const legal = ['e1g1', 'e1c1', 'e1f1', 'e1d1'];
+  it('king onto your own rook castles that side', () => {
+    expect(c.castleDestination(both(), legal, 'e1', 'h1')).toBe('g1');
+    expect(c.castleDestination(both(), legal, 'e1', 'a1')).toBe('c1');
+  });
+  it('null when that castle is not legal right now', () => {
+    expect(c.castleDestination(both(), ['e1f1'], 'e1', 'h1')).toBeNull();
+  });
+  it('null for the opponent\'s rook, a non-king, or another rank', () => {
+    expect(c.castleDestination(both(), legal, 'e1', 'h8')).toBeNull();
+    expect(c.castleDestination(both(), legal, 'a1', 'h1')).toBeNull();
+  });
+});
+
 describe('isKingAttacked', () => {
   const b = (fen) => c.fenToBoard(fen);
   it('start position: neither king is attacked', () => {
