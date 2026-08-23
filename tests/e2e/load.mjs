@@ -253,6 +253,72 @@ const handedBack = await page.$$eval('#board [class*="piece"]:not([data-sfct])',
 if (handedBack < 10) fail(`Chess.com pieces not restored after closing: ${handedBack}`);
 console.log('PASS 13: closing the result restores', handedBack, 'Chess.com pieces');
 
+// 14. castling the Chess.com way (king onto your own rook) and promotion with a
+// real choice of piece — both driven through the UI, against the real engine.
+const CASTLE_HTML = `<!doctype html><html><body style="margin:0">
+<div class="player-row-component player-row-top"><span class="cc-user-rating-white">(1450)</span></div>
+<wc-chess-board id="board" style="position:relative;display:block;width:480px;height:480px;background:#eee">
+${fenToDivs('4k3/P7/8/8/8/8/8/R3K2R')}</wc-chess-board>
+<div class="move-list"><div class="node white-move main-line-ply">Kf1</div>
+<div class="node black-move main-line-ply">Ke8</div></div>
+<div class="game-over-modal-shell-container"><div class="game-over-modal-shell-buttons">
+<button aria-label="New Game">New Game</button></div></div>
+</body></html>`;
+await page.route('https://www.chess.com/game/live/castle', route =>
+  route.fulfill({ status: 200, contentType: 'text/html', body: CASTLE_HTML }));
+await page.goto('https://www.chess.com/game/live/castle', { waitUntil: 'domcontentloaded' });
+await page.locator('#sfctplay-btn').waitFor({ timeout: 10000 }).catch(() => fail('no button on the castling page'));
+await page.locator('#sfctplay-btn').click();
+await page.waitForFunction(() => /Your move/.test(document.getElementById('sfct-badge')?.textContent || ''),
+  null, { timeout: 60000 }).catch(() => fail('engine never ready on the castling page'));
+
+const box2 = await page.locator('#board').boundingBox();
+const at = (file, rank) => ({
+  x: box2.x + (file - 0.5) * (box2.width / 8),
+  y: box2.y + (8 - rank + 0.5) * (box2.height / 8),
+});
+const tap = async (file, rank) => { await page.mouse.click(at(file, rank).x, at(file, rank).y); await page.waitForTimeout(350); };
+const pieceAt = (sq) => page.$eval(`#board [data-sfct="piece"].square-${sq}`, el => el.className).catch(() => null);
+
+await tap(5, 1);            // pick up the king on e1
+await tap(8, 1);            // …and drop it on our own rook: castle king-side
+await page.waitForTimeout(1200);
+const kingCls = await pieceAt('71'), rookCls = await pieceAt('61');
+if (!/\bwk\b/.test(kingCls || '')) fail('king did not castle to g1: ' + kingCls);
+if (!/\bwr\b/.test(rookCls || '')) fail('rook did not jump to f1: ' + rookCls);
+console.log('PASS 14: castled by dropping the king on the rook — king g1, rook f1');
+
+await page.waitForFunction(() => /Your move/.test(document.getElementById('sfct-badge')?.textContent || ''),
+  null, { timeout: 60000 }).catch(() => fail('engine never replied after castling'));
+
+// 15. promotion offers the four pieces, and takes the one you pick
+// the engine announces "Your move" before its legal-move list is back, so wait
+// for the pawn to actually take the selection before aiming at a8
+await page.waitForTimeout(600);
+await tap(1, 7);            // the a7 pawn
+await page.locator('#board [data-sfct="piece"].square-17.sfct-sel').waitFor({ timeout: 8000 })
+  .catch(() => fail('the a7 pawn never got selected'));
+await tap(1, 8);            // …to a8
+await page.locator('[data-sfct="promo"]').waitFor({ timeout: 5000 }).catch(async () => fail(
+  'no promotion picker; ' + JSON.stringify(await page.evaluate(() => ({
+    badge: document.getElementById('sfct-badge')?.textContent,
+    selected: [...document.querySelectorAll('#board .sfct-sel')].map(e => (e.className.match(/square-\d\d/) || [])[0]),
+    a7: !!document.querySelector('#board [data-sfct="piece"].square-17'),
+    a8: document.querySelector('#board [data-sfct="piece"].square-18')?.className || null,
+    markers: [...document.querySelectorAll('[data-sfct]')].map(e => e.getAttribute('data-sfct')),
+    promoHtml: document.querySelector('[data-sfct="promo"]')?.outerHTML?.slice(0, 200) || null,
+    promoBox: (() => { const e = document.querySelector('[data-sfct="promo"]');
+      if (!e) return null; const r = e.getBoundingClientRect(); return { w: r.width, h: r.height }; })(),
+  })))));
+const offered = await page.$$eval('[data-sfct="promo"] > div', els =>
+  els.map(e => (e.className.match(/\bw([qnrb])\b/) || [])[1]));
+if (offered.join('') !== 'qnrb') fail('promotion picker offered: ' + offered.join(','));
+await page.locator('[data-sfct="promo"] > div').nth(1).click(); // the knight
+await page.waitForTimeout(1200);
+const promoted = await pieceAt('18');
+if (!/\bwn\b/.test(promoted || '')) fail('promoted to the wrong piece: ' + promoted);
+console.log('PASS 15: promotion picker offered q,n,r,b and a knight landed on a8');
+
 console.log('\nALL CHECKS PASSED');
 if (logs.length) console.log('--- page logs ---\n' + logs.join('\n'));
 await ctx.close();
