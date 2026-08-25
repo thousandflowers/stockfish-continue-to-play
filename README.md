@@ -1,6 +1,6 @@
 # ♟️ Stockfish Continue to Play
 
-**Browser extension for Chess.com — when a game ends, keep playing the final position vs Stockfish on the same board. One click.**
+**Browser extension for Chess.com - when a game ends, keep playing the final position vs Stockfish on the same board. One click.**
 
 [![Chrome](https://img.shields.io/badge/Chrome-MV3-4285F4?logo=googlechrome&logoColor=white)](#installation)
 [![Firefox](https://img.shields.io/badge/Firefox-MV3-FF7139?logo=firefoxbrowser&logoColor=white)](#firefox)
@@ -10,7 +10,7 @@
 
 ## The problem
 
-You're winning. Your opponent resigns, disconnects, or times out. Game over — but you
+You're winning. Your opponent resigns, disconnects, or times out. Game over - but you
 wanted to play it through. This extension adds a **Continue vs Computer** button to the
 game-over screen. Click it and you keep playing the exact final position against
 Stockfish, right there on the Chess.com board, with difficulty matched to your
@@ -24,7 +24,7 @@ Chess.com: Game Over  →  [♟ Continue vs Computer]  →  play the position vs
 
 ## Why I built this
 
-In fast games — bullet, blitz — opponents resign or disconnect all the time, often
+In fast games - bullet, blitz - opponents resign or disconnect all the time, often
 in positions where the most interesting part is still ahead. I wanted to keep playing
 from exactly where we left off, on the same board, without setting anything up.
 
@@ -35,13 +35,13 @@ in-page, so the game never leaves Chess.com.
 
 ## Features
 
-- **Inline on the real board** — no redirect, no new tab; you keep playing on the Chess.com board you were already on.
-- **Adaptive difficulty** — Stockfish's `UCI_Elo` is matched to the opponent's rating read from the page.
-- **No servers, no telemetry** — Stockfish runs entirely in your browser via WebAssembly. Nothing is uploaded.
-- **Click or drag** — move pieces either way; legal destinations are highlighted; promotions auto-queen.
-- **Correct chess** — castling, en-passant, checkmate/stalemate and repetition are handled by the engine itself (moves are replayed to Stockfish).
-- **On/off toggle** — a popup to disable it when you don't want it.
-- **Open source** — MIT.
+- **Inline on the real board** - no redirect, no new tab; you keep playing on the Chess.com board you were already on.
+- **Adaptive difficulty** - Stockfish's `UCI_Elo` is matched to the opponent's rating read from the page.
+- **No servers, no telemetry** - Stockfish runs entirely in your browser via WebAssembly. Nothing is uploaded.
+- **Click or drag** - move pieces either way; legal destinations are highlighted; promotions auto-queen.
+- **Correct chess** - castling, en-passant, checkmate/stalemate and repetition are handled by the engine itself (moves are replayed to Stockfish).
+- **On/off toggle** - a popup to disable it when you don't want it.
+- **Open source** - MIT.
 
 ---
 
@@ -73,7 +73,7 @@ cp manifest-firefox.json manifest.json
 # about:debugging#/runtime/this-firefox → "Load Temporary Add-on" → pick manifest.json
 ```
 
-The extension is **not yet published** on the Chrome Web Store or Firefox Add-ons —
+The extension is **not yet published** on the Chrome Web Store or Firefox Add-ons -
 install from source as above.
 
 ---
@@ -110,4 +110,4 @@ model, difficulty mapping, and project structure.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE).

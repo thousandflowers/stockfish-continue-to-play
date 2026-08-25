@@ -19,7 +19,7 @@ jobs:
       - run: npm test
 
   # The unit tests cover the pure helpers; this is the one that exercises the
-  # real extension in a real browser with the real engine — every production bug
+  # real extension in a real browser with the real engine - every production bug
   # found so far was caught here, not by the unit tests.
   e2e:
     runs-on: ubuntu-latest
