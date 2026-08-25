@@ -22,9 +22,9 @@ After editing files, hit the reload icon on the extension card and refresh the C
 
 See [ARCHITECTURE.md](ARCHITECTURE.md). In short:
 
-- `lib/chess-core.js` — pure chess logic, no DOM. Unit-tested directly.
-- `lib/chess-dom.js` — Chess.com DOM scraping. Tested under jsdom with HTML fixtures.
-- `content_chesscom.js` — orchestration (engine worker, rendering, input, lifecycle).
+- `lib/chess-core.js` - pure chess logic, no DOM. Unit-tested directly.
+- `lib/chess-dom.js` - Chess.com DOM scraping. Tested under jsdom with HTML fixtures.
+- `content_chesscom.js` - orchestration (engine worker, rendering, input, lifecycle).
 
 Keep pure logic in `lib/` so it stays testable; keep DOM/engine wiring in the content
 script.
@@ -55,14 +55,14 @@ npx playwright install chromium
 CI runs it too: the engine is cached by its pinned checksum and the browser goes headless
 (`CI=1` picks Chrome's new headless mode, the only one that loads extensions). Locally it stays
 headed so you can watch it play. Run it before any release,
-and whenever you touch `content_chesscom.js` — the unit tests cannot see injection,
+and whenever you touch `content_chesscom.js` - the unit tests cannot see injection,
 worker or lifecycle regressions.
 
 ## Conventions
 
 - Match the existing style: small functions, early returns, named constants over magic
   numbers, immutable updates.
-- No `console.log` in shipped paths — the content script logs only behind `DEBUG`
+- No `console.log` in shipped paths - the content script logs only behind `DEBUG`
   (default `false`).
 - Conventional commit messages (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`).
 - Update `README.md` / `ARCHITECTURE.md` when behaviour or layout changes.

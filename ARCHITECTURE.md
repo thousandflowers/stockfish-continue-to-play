@@ -2,9 +2,9 @@
 
 ## How it works
 
-1. **Detect game over** — a content script on Chess.com watches for the game-over modal and injects a **Continue vs Computer** button next to Rematch / New Game.
-2. **Capture the position** — on click it reads the final FEN and the player's colour from the page, and the opponent's rating to pick a difficulty.
-3. **Play inline** — it hides the game-over modal and renders the position on the existing Chess.com board. Stockfish runs in a Web Worker; you move by click or drag, the engine replies.
+1. **Detect game over** - a content script on Chess.com watches for the game-over modal and injects a **Continue vs Computer** button next to Rematch / New Game.
+2. **Capture the position** - on click it reads the final FEN and the player's colour from the page, and the opponent's rating to pick a difficulty.
+3. **Play inline** - it hides the game-over modal and renders the position on the existing Chess.com board. Stockfish runs in a Web Worker; you move by click or drag, the engine replies.
 
 There is no redirect and no backend: Stockfish (WebAssembly) runs in your browser and nothing is uploaded.
 
@@ -44,7 +44,7 @@ Source 1 carries real castling/en-passant data, so it wins over the scraped plac
 
 **What actually runs on chess.com today is source 2.** A probe run against live
 chess.com pages (a finished game and `/play/computer`, extension loaded) showed the
-board element carries only `class`, `id` and `style` — no FEN attribute. Earlier
+board element carries only `class`, `id` and `style` - no FEN attribute. Earlier
 versions also tried React state on the board element and page globals like
 `window.chessground`; both were removed because a content script runs in an isolated
 world where page expandos and page globals are invisible, so those branches could
@@ -56,7 +56,7 @@ until the first move, after which Stockfish tracks them from the move list.
 Only needed when the position is scraped (the usual case). Chess.com renders one
 node per ply, tagged with the colour that played it (`node white-move main-line-ply`
 / `node black-move …`), so `getTurnFromMoveList()` reads the **last** ply node. The
-previous parity count over `[data-whole-move-number]` was wrong by construction —
+previous parity count over `[data-whole-move-number]` was wrong by construction -
 that attribute marks move *pairs*, so a live board reported "black to move" both
 after `1. e4` and after `1… e5`. When there is no move list, the board's last-move
 highlight squares are used: whichever colour's piece stands on one of them just
@@ -66,7 +66,7 @@ moved, so the other side is up.
 
 `getOpponentElo()` reads the first rating-looking number (`^\(?\d{3,4}\)?$`, chess.com
 renders bot ratings as `(250)`) inside the opponent's player row, matched as
-`[class*="player"][class*="top"]` — chess.com has renamed that row repeatedly
+`[class*="player"][class*="top"]` - chess.com has renamed that row repeatedly
 (`board-player-component` → `player-component player-top` → `player-row-top`), so the
 selector matches the durable shape rather than one generation's class names. Falls back
 to the strongest explicit rating node on the page, then to 1500.
@@ -98,7 +98,7 @@ via `module.exports` for the tests.
 
 | Browser | Status | Notes |
 |:--------|:------:|:------|
-| Chrome MV3 | ✅ | `manifest.json` — also Edge / Brave / Arc / Opera |
+| Chrome MV3 | ✅ | `manifest.json` - also Edge / Brave / Arc / Opera |
 | Firefox MV3 | ✅ | `manifest-firefox.json`, Gecko 128+ |
 | Safari | ❌ | Would need the Safari Web Extension Converter + a `browser.*` shim |
 
