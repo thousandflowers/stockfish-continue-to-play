@@ -51,6 +51,32 @@ in-page, so the game never leaves Chess.com.
 
 ## Installation
 
+The extension is **not yet published** on the Chrome Web Store or Firefox Add-ons, so it is
+installed by hand. The quickest way is the prebuilt zip.
+
+### Chrome, Edge, Brave, Arc, Opera
+
+1. Download `stockfish-continue-to-play-chrome-<version>.zip` from the newest `v…` release
+   on the [Releases page](https://github.com/thousandflowers/stockfish-continue-to-play/releases).
+2. Unzip it.
+3. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick
+   the unzipped folder.
+
+That is all. **The release zips already bundle the Stockfish engine**, so there is no
+download script to run and nothing is fetched at runtime.
+
+### Firefox
+
+Firefox needs its own zip - `stockfish-continue-to-play-firefox-<version>.zip` from the same
+release. Unzip it, then open `about:debugging#/runtime/this-firefox`, click **Load Temporary
+Add-on** and pick the `manifest.json` inside the unzipped folder.
+
+> **Temporary is literal.** Until the add-on is signed by addons.mozilla.org, Firefox will
+> only load it as a temporary add-on: it is removed when you close the browser, and you have
+> to load it again every session. Chrome has no such restriction.
+
+### From source
+
 ```bash
 # 1. Clone
 git clone https://github.com/thousandflowers/stockfish-continue-to-play.git
@@ -61,26 +87,15 @@ bash scripts/download-stockfish.sh
 
 # 3a. Chrome / Edge / Brave / Arc / Opera
 #     chrome://extensions → enable "Developer mode" → "Load unpacked" → pick this folder
+
+# 3b. Firefox 128+ uses a separate manifest - swap it in first
+#     cp manifest-firefox.json manifest.json
+#     about:debugging#/runtime/this-firefox → "Load Temporary Add-on" → pick manifest.json
 ```
 
 > `stockfish.js` (~10 MB) is excluded from git to keep clones lean. The
 > [download script](scripts/download-stockfish.sh) fetches it and verifies it against
 > the pinned checksum in `stockfish.js.sha256`.
-
-### Firefox
-
-Firefox 128+ uses a separate manifest. Swap it in, then load the folder as a temporary
-add-on:
-
-```bash
-cp manifest-firefox.json manifest.json
-# about:debugging#/runtime/this-firefox → "Load Temporary Add-on" → pick manifest.json
-```
-
-The extension is **not yet published** on the Chrome Web Store or Firefox Add-ons. Either
-install from source as above, or grab a prebuilt zip from
-[Releases](https://github.com/thousandflowers/stockfish-continue-to-play/releases) and load
-it unpacked - the zips already contain the engine, so step 2 is not needed.
 
 ---
 

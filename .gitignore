@@ -5,3 +5,5 @@ Thumbs.db
 stockfish.js
 *.zip
 dist-amo/
+stockfish.wasm
+CWS-AUDIT.md
