@@ -1,6 +1,6 @@
 {
   "name": "stockfish-continue-to-play",
-  "version": "3.1.1",
+  "version": "3.1.2",
   "private": true,
   "license": "GPL-3.0-or-later",
   "type": "module",
@@ -8,11 +8,16 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "node tests/e2e/load.mjs",
-    "package": "bash scripts/package.sh"
+    "package": "bash scripts/package.sh",
+    "lint:ff": "bash scripts/lint-firefox.sh",
+    "source-archive": "bash scripts/source-archive.sh",
+    "publish:amo": "bash scripts/publish-amo.sh",
+    "publish:cws": "bash scripts/publish-cws.sh"
   },
   "devDependencies": {
     "jsdom": "^25.0.0",
     "playwright": "^1.62.1",
-    "vitest": "^3.0.0"
+    "vitest": "^3.0.0",
+    "web-ext": "^10.6.0"
   }
 }
