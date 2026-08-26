@@ -116,6 +116,8 @@ model, difficulty mapping, and project structure.
 
 ## License
 
+No data leaves your machine - see [PRIVACY.md](PRIVACY.md).
+
 **GPLv3** - see [LICENSE](LICENSE).
 
 This extension bundles [Stockfish](https://github.com/official-stockfish/Stockfish), which

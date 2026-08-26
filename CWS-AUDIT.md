@@ -210,9 +210,13 @@ Findings:
   script.~~ Fixed in v3.1.0 by `scripts/package.sh`.** `package.json` has only `test`, `test:watch`, `test:e2e`. One forgetful
   invocation from the repo root (`zip -r … .`) would ship `node_modules` and `.git`.
   Add a `package` script that lists exactly the 8 paths above and nothing else.
-- **NON-BLOCKING - `icons/icon128.png` is 503,829 bytes.** A 128×128 PNG belongs in the
-  10-20 KB range; this one is 5% of the whole package and ~40× larger than it needs to be.
-  Recompress (`pngquant`/`oxipng`); the other three icons are already fine.
+- **~~NON-BLOCKING - `icons/icon128.png` is 503,829 bytes.~~ Fixed in v3.1.1, and the
+  diagnosis was too kind.** The file was not an oversized 128×128 - it was **640×640**,
+  declared in the manifest under the `128` key. Worse, "the other three icons are already
+  fine" was wrong: **all four** icons had no alpha channel and carried the editor's grey
+  transparency checkerboard baked into the pixels, so every one of them drew a grey tile
+  behind the knight in the toolbar. Rebuilt from the master at true sizes with real alpha:
+  503,829 → 18,279 bytes for the 128, package 10.6 → 10.2 MiB.
 - Size is nowhere near the 2 GB store limit. The user-visible cost is a ~6.8 MiB install.
 
 ---
@@ -254,15 +258,13 @@ differences, everything else is identical:
 
 Flags:
 
-- **NON-BLOCKING (AMO)** - the id `{a1b2c3d4-e5f6-7890-abcd-ef1234567890}`
-  (`manifest-firefox.json:8`) is a hand-typed placeholder, not a generated UUID. Replace it
-  with a real UUID or an email-style id (`stockfish-continue@thousandflowers`) before you
-  ever publish on AMO; ids are permanent and this one reads like a collision waiting to
-  happen.
-- **BLOCKING (AMO only, irrelevant to Chrome)** - `stockfish.js` is minified vendored
-  code, so AMO requires a **source-code submission** alongside the package, with build
-  instructions. `scripts/download-stockfish.sh` plus the pinned checksum is most of that
-  story; write it down.
+- **~~NON-BLOCKING (AMO)~~ Fixed in v3.1.1** - the hand-typed placeholder id
+  `{a1b2c3d4-e5f6-7890-abcd-ef1234567890}` is now `stockfish-continue@thousandflowers`.
+  Ids are permanent once published, and it was changed before any publish.
+- **~~BLOCKING (AMO only, irrelevant to Chrome)~~ Written up in v3.1.1** -
+  `docs/AMO-SOURCE-SUBMISSION.md` has the archive command, the reviewer notes and the
+  reproduce-the-binary steps. `stockfish.js` is still minified vendored code, so the
+  submission itself is still required.
 - **~~NON-BLOCKING~~ Done in v3.1.0** - `scripts/package.sh` renames
   `manifest-firefox.json` to `manifest.json` for the Firefox zip.
 
@@ -331,9 +333,9 @@ Two things to know, neither blocking:
 
 ### Must fix before you submit
 
-1. **Produce the listing assets.** At least one 1280×800 (or 640×400) screenshot, plus the
-   440×280 promo tile. The form will not let you submit without them. Nothing in the repo
-   covers this.
+1. **~~Produce the listing assets.~~ Done in v3.1.1.** `store/` now holds five 1280×800
+   screenshots, the 440×280 promo tile and a real 128×128 store icon, and
+   `store/LISTING.md` carries the paste-ready copy for every field of both dashboards.
 2. **Answer the remote-code question "No"** and paste the justification from §2 - a
    reviewer seeing `new Worker(blobUrl)` (`content_chesscom.js:79`) without an explanation
    is the single most likely cause of a bounce.
@@ -344,7 +346,8 @@ Two things to know, neither blocking:
    real game on chess.com still works. That removes an install warning you cannot
    otherwise justify, since nothing uses it.
 4. **Fill the Data Use form as "does not collect user data"** and certify the three
-   statements (§3). Add the privacy-policy URL if you tick anything at all.
+   statements (§3). The exact ticks are written out in `store/LISTING.md`, and `PRIVACY.md`
+   is published for the policy URL - so this is now form-filling, not a decision.
 5. **~~Bump the version~~ Done in v3.1.0.** `manifest.json`, `manifest-firefox.json` and
    `package.json` all read `3.1.0`.
 6. **~~Commit a packaging script~~ Done in v3.1.0.** `scripts/package.sh` (`npm run
@@ -363,14 +366,40 @@ Two things to know, neither blocking:
 
 ### Can wait until after review
 
-- Recompress `icons/icon128.png` (503 KB → ~15 KB).
+- **~~Recompress `icons/icon128.png`~~ Done in v3.1.1** — and the size was the smaller
+  half of it: the file was **640×640, not 128×128**, and all four icons had the grey
+  transparency checkerboard **baked into the pixels** (no alpha channel at all), so the
+  toolbar drew a grey tile behind the knight. Rebuilt from the master with real alpha:
+  503,829 → 18,279 bytes, package 10.6 → 10.2 MiB.
 - `"use_dynamic_url": true` on `web_accessible_resources` (`manifest.json:41-44`) so
   chess.com cannot fingerprint the extension.
 - Narrow `content_scripts.matches` to `https://` (`manifest.json:33-34`).
 - Add `minimum_chrome_version: "103"`, `action.default_title`, `homepage_url`.
 - Wrap `syncBoardToState()` in `try/catch` so a rendering bug cannot log once a second.
-- Firefox/AMO: replace the placeholder gecko id (`manifest-firefox.json:8`), write the
-  source-submission notes for the minified engine, and script the
-  `manifest-firefox.json` → `manifest.json` rename.
+- **~~Firefox/AMO~~ Done.** Gecko id is now `stockfish-continue@thousandflowers` (v3.1.1),
+  the source-submission notes are in `docs/AMO-SOURCE-SUBMISSION.md` (v3.1.1), and
+  `scripts/package.sh` scripts the `manifest-firefox.json` → `manifest.json` rename
+  (v3.1.0).
 - Re-run the offline check from §1 after any future engine bump; it is the one test that
   proves the remote-code answer is still true.
+
+---
+
+## Addendum - 2026-08-26, found while producing the listing assets
+
+Two defects the read-only audit could not see, because both only show up when you render the
+UI rather than read it:
+
+1. **The popup hardcoded its own version.** `popup.html` printed `v3.0.0` in the footer as a
+   literal string; it had been wrong since the 3.1.0 bump and would have gone out that way.
+   It now reads `chrome.runtime.getManifest().version`, and `tests/popup.test.js` fails if a
+   literal version string ever reappears in that file.
+2. **The popup named the button wrongly.** It said the *"Continue vs AI"* button appears on
+   the game-over dialog; the button has always said **"Continue vs Computer"**. The test
+   suite now reads the label straight out of `content_chesscom.js` and asserts the popup
+   quotes that exact string, so the two cannot drift apart again.
+
+Also fixed here: the strength dropdown's first option was long enough to be clipped by the
+260px popup (`Auto - match the opponent you played` -> `Auto · match your opponent`), and
+the icon defects described above.
+
