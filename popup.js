@@ -14,6 +14,10 @@ document.addEventListener('DOMContentLoaded', () => {
     update(res.active !== false);
   });
 
+  // Read it from the manifest: a hardcoded string here silently claims the
+  // wrong version on every release after the one it was typed in.
+  document.getElementById('version').textContent = 'v' + chrome.runtime.getManifest().version;
+
   const strength = document.getElementById('strength');
   chrome.storage.local.get(['strength'], (res) => { strength.value = res.strength || 'auto'; });
   strength.addEventListener('change', () => {
