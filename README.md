@@ -6,6 +6,10 @@
 [![Firefox](https://img.shields.io/badge/Firefox-MV3-FF7139?logo=firefoxbrowser&logoColor=white)](#firefox)
 [![License](https://img.shields.io/badge/License-GPLv3-blue)](LICENSE)
 
+![The extension taking over a finished Chess.com game and playing it out against Stockfish](docs/demo.gif)
+
+<sub>A real game ends, "Continue vs Computer" appears, and the same board keeps going against Stockfish - no redirect, no new tab. Recorded at 2x.</sub>
+
 ---
 
 ## The problem
