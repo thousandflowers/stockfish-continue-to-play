@@ -73,8 +73,10 @@ cp manifest-firefox.json manifest.json
 # about:debugging#/runtime/this-firefox → "Load Temporary Add-on" → pick manifest.json
 ```
 
-The extension is **not yet published** on the Chrome Web Store or Firefox Add-ons -
-install from source as above.
+The extension is **not yet published** on the Chrome Web Store or Firefox Add-ons. Either
+install from source as above, or grab a prebuilt zip from
+[Releases](https://github.com/thousandflowers/stockfish-continue-to-play/releases) and load
+it unpacked - the zips already contain the engine, so step 2 is not needed.
 
 ---
 

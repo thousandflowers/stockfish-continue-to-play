@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Stockfish Continue to Play",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "After a game ends on Chess.com, continue the position vs Stockfish AI on the same page. One click, automatic.",
   "browser_specific_settings": {
     "gecko": {
@@ -11,9 +11,6 @@
   },
   "permissions": [
     "storage"
-  ],
-  "host_permissions": [
-    "*://*.chess.com/*"
   ],
   "background": {
     "scripts": ["service-worker.js"]
@@ -50,6 +47,6 @@
     }
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+    "extension_pages": "script-src 'self'; object-src 'self'"
   }
 }

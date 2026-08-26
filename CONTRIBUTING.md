@@ -42,6 +42,17 @@ npm run test:e2e    # real browser + real engine (see below)
   page snapshot in `tests/fixtures/`.
 - All tests must pass before a PR. CI runs both `npm test` and `npm run test:e2e` on push/PR.
 
+## Packaging
+
+```bash
+npm run package     # builds stockfish-continue-to-play-{chrome,firefox}-<version>.zip
+```
+
+`scripts/package.sh` lists every packaged path explicitly - never run `zip -r` from the
+repo root, it would ship `node_modules/` and `.git/`. It re-verifies the engine checksum
+first, renames `manifest-firefox.json` to `manifest.json` inside the Firefox zip, and
+includes the GPLv3 notices (`LICENSE`, `LICENSE.stockfish`, `LICENSE.MIT`).
+
 `npm run test:e2e` loads the unpacked extension into a real Chromium, serves a fake
 Chess.com game-over page on a `chess.com` URL and drives the whole flow: button
 injection → inline board → engine ready → a player move → Stockfish's reply → teardown.
