@@ -34,8 +34,12 @@ jobs:
       - name: Cache the Stockfish engine
         uses: actions/cache@v4
         with:
-          path: stockfish.js
-          key: stockfish-${{ hashFiles('stockfish.js.sha256') }}
+          # Both halves, or a cache hit restores the loader without its binary
+          # and the download step has to fetch 7 MB anyway.
+          path: |
+            stockfish.js
+            stockfish.wasm
+          key: stockfish-${{ hashFiles('stockfish.sha256') }}
       - name: Fetch the engine if the cache missed
         run: bash scripts/download-stockfish.sh
       - name: Cache Playwright browsers
