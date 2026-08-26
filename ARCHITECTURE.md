@@ -6,7 +6,7 @@
 2. **Capture the position** - on click it reads the final FEN and the player's colour from the page, and the opponent's rating to pick a difficulty.
 3. **Play inline** - it hides the game-over modal and renders the position on the existing Chess.com board. Stockfish runs in a Web Worker; you move by click or drag, the engine replies.
 
-There is no redirect and no backend: Stockfish (WebAssembly) runs in your browser and nothing is uploaded.
+There is no redirect and no backend: Stockfish runs in your browser as WebAssembly, in a Web Worker, and nothing is uploaded.
 
 ## Engine model: replay the move history
 
@@ -80,7 +80,8 @@ to the strongest explicit rating node on the page, then to 1500.
 ├── content_chesscom.js   # Orchestration: engine worker, board rendering, input, lifecycle
 ├── service-worker.js     # MV3 background — sets the default on/off state
 ├── popup.html / popup.js # On/off toggle
-├── stockfish.js          # Stockfish engine (~10 MB, downloaded, git-ignored)
+├── stockfish.js          # Stockfish loader (21 KB, downloaded, git-ignored)
+├── stockfish.wasm        # Stockfish engine (7 MB, downloaded, git-ignored)
 ├── stockfish.js.sha256   # Pinned engine checksum
 ├── manifest.json         # Chrome MV3 manifest
 ├── manifest-firefox.json # Firefox MV3 manifest (Gecko 128+)

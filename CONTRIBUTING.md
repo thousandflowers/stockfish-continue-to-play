@@ -8,7 +8,7 @@ Thanks for helping out! This is a small, dependency-light browser extension.
 git clone https://github.com/thousandflowers/stockfish-continue-to-play.git
 cd stockfish-continue-to-play
 npm install                      # vitest + jsdom (dev only)
-bash scripts/download-stockfish.sh   # fetch the engine (~10 MB, git-ignored)
+bash scripts/download-stockfish.sh   # fetch the engine (~7 MB, git-ignored)
 ```
 
 Load it unpacked:

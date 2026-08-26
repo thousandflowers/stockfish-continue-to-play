@@ -34,6 +34,15 @@ which is a user-clicked `<a href>`, not a request.
 
 ### Is the Stockfish binary bundled or downloaded?
 
+> **Superseded as of v3.2.0.** Everything in this subsection and the CSP one below described
+> the **ASM.JS** engine, which was replaced by the WebAssembly build. The conclusions that
+> still hold: the engine is bundled, nothing is fetched at runtime, and the extension works
+> offline - all re-verified against the new engine. What changed: there are now two files
+> (`stockfish.js`, a 21 KB loader, and `stockfish.wasm`, 7 MB), `wasm-unsafe-eval` is back in
+> the CSP because it is now genuinely needed, and the two "dead loader branches" below are no
+> longer dead - one of them is how the engine loads. See the addendum at the end and
+> `vendor/STOCKFISH-PROVENANCE.md`.
+
 **Bundled, and verified so empirically.**
 
 - `stockfish.js` (10,509,235 bytes) ships inside the zip. It is Stockfish.js 18 (header,
@@ -69,7 +78,9 @@ after any engine upgrade.
 `"extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"`.
 
 **~~NON-BLOCKING - `wasm-unsafe-eval` is not needed by this build and should come out.~~
-Removed in v3.1.0 from both manifests; all 15 e2e checks still pass.** The
+Removed in v3.1.0 - then put back in v3.2.0, when the engine became WebAssembly and the
+directive became necessary rather than decorative.** Both states were correct for their
+engine; the finding is a good example of a conclusion with a shelf life.' The
 bundled engine is the ASM.JS build; it never touches WebAssembly, so the directive loosens
 the CSP for nothing and invites a reviewer to ask why an extension that "doesn't run
 WebAssembly" asks for permission to compile it. Drop it from both manifests, reload the
@@ -402,4 +413,50 @@ UI rather than read it:
 Also fixed here: the strength dropdown's first option was long enough to be clipped by the
 260px popup (`Auto - match the opponent you played` -> `Auto · match your opponent`), and
 the icon defects described above.
+
+---
+
+## Addendum - 2026-08-26, the engine was replaced
+
+The submission to AMO was attempted and the validator stopped it:
+
+```
+1 error, 2 warnings, 0 notices
+File is too large to parse.  ->  stockfish.js
+```
+
+Mozilla's `addons-linter` refuses to parse any JavaScript file over 5 MB. The ASM.JS engine
+was 10.5 MB of JavaScript, so it could not be scanned. Left alone, that meant manual review
+for **every future version**, forever - a permanent tax, not a one-off.
+
+**Fixed by changing which upstream build is bundled**, not by any trick: from
+`stockfish-18-asm` to `stockfish-18-lite-single`, which is the same strength tier but ships
+the engine as a real `.wasm` binary beside a 21 KB loader. Linters do not parse binaries, so
+the error is gone:
+
+```
+errors 0   warnings 2   notices 0
+```
+
+Renaming JavaScript to `.txt` to dodge the scanner was considered and rejected: it reads as
+evasion and is worse than the problem it solves.
+
+Two risks were tested *before* the work, because either would have made it impossible:
+
+1. **Does chess.com allow WebAssembly?** The engine runs inside chess.com's page, under
+   chess.com's CSP, not the extension's. Measured on the live site: the only CSP header is
+   `frame-ancestors 'self'`, and WebAssembly compiles both on the page and inside a blob
+   Worker.
+2. **Can a blob Worker find the `.wasm`?** It has no base URL for a relative path. The
+   loader reads the location from its own `location.hash`, so the worker URL carries
+   `#<encoded chrome-extension:// URL>`. Verified booting a real engine that way.
+
+Consequences recorded elsewhere: `wasm-unsafe-eval` is back in both manifests,
+`stockfish.wasm` is in `web_accessible_resources`, the package dropped from 10.6 to 5.5 MiB
+zipped, and the offline check was re-run against the new engine - all 15 e2e checks pass with
+the browser context offline from the first byte, with zero external requests.
+
+The GPLv3 compliance gap this audit's provenance file used to declare is also closed on the
+port side: the new engine comes from a published, versioned npm release rather than a
+re-hosted copy of unknown origin.
 

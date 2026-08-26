@@ -15,8 +15,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 const EXT = path.resolve(import.meta.dirname, '../..');
-if (!existsSync(path.join(EXT, 'stockfish.js'))) {
-  console.error('✗ stockfish.js missing — run: bash scripts/download-stockfish.sh');
+// Both halves of the engine must be there: a loader without its .wasm boots
+// and then hangs, which reads as a flaky test rather than a missing file.
+const missing = ['stockfish.js', 'stockfish.wasm'].filter(f => !existsSync(path.join(EXT, f)));
+if (missing.length) {
+  console.error(`✗ ${missing.join(' and ')} missing — run: bash scripts/download-stockfish.sh`);
   process.exit(1);
 }
 const userDataDir = mkdtempSync(path.join(tmpdir(), 'sfct-'));
