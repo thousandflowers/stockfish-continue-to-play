@@ -6,3 +6,4 @@ stockfish.js
 stockfish.wasm
 *.zip
 dist-amo/
+CWS-AUDIT.md

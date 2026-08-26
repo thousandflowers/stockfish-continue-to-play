@@ -1,8 +1,10 @@
 # Store listing - copy to paste into the dashboards
 
-Everything a reviewer or a form asks for, written out. Copy the blocks verbatim; they were
-written against the audit in [`../CWS-AUDIT.md`](../CWS-AUDIT.md), so the answers and the code
-agree.
+Everything a reviewer or a form asks for, written out. Copy the blocks verbatim: each answer
+was written against the shipped code and re-checked against it, so the two agree. Where an
+answer depends on how the engine is packaged - the remote-code question above all - the
+reasoning is in [`../vendor/STOCKFISH-PROVENANCE.md`](../vendor/STOCKFISH-PROVENANCE.md) and
+[`../docs/PUBLISHING.md`](../docs/PUBLISHING.md).
 
 Assets in this folder:
 
