@@ -18,9 +18,9 @@ paste-ready text for every field either dashboard asks for.
 | Screenshots, promo tile, store icon | `store/` |
 | Listing copy for every field | `store/LISTING.md` |
 | Privacy policy at a public URL | `PRIVACY.md` |
-| AMO source archive | `npm run source-archive v3.1.1` |
+| AMO source archive | `npm run source-archive` |
 | AMO reviewer notes | `docs/AMO-SOURCE-SUBMISSION.md` |
-| Mozilla's own validator passing | `npm run lint:ff` - see the known findings below |
+| Mozilla's own validator passing | `npm run lint:ff` - `errors 0` since v3.2.0 |
 | Package upload scripted | `npm run publish:cws`, `npm run publish:amo` |
 
 ## What only you can do
@@ -101,11 +101,12 @@ Keep those four values out of the repo. They publish under your name.
 2. **Submit a New Add-on** → *On this site* (listed).
 3. Upload `stockfish-continue-to-play-firefox-<version>.zip`. Note the id
    `stockfish-continue@thousandflowers` is **permanent** from this moment.
-4. **Source code upload: required.** AMO asks because `stockfish.js` is
-   minified vendored code. Build the archive and paste the reviewer notes:
+4. **Source code upload: still required**, even after the engine change. AMO asks because
+   the vendored loader is minified and the `.wasm` is compiled. Build the archive and paste
+   the reviewer notes:
 
    ```bash
-   npm run source-archive v3.1.1     # writes source-v3.1.1.zip
+   npm run source-archive            # writes source-v<version>.zip
    ```
 
    The notes to paste are the fenced block in
@@ -133,32 +134,30 @@ that fails it. Source upload for each new version is still manual.
 
 ## Known linter findings, and what they mean
 
-`npm run lint:ff` currently reports **1 error and 2 warnings**. Both are
-understood; neither is an accident.
+`npm run lint:ff` currently reports **0 errors and 2 warnings**. The error is fixed; the
+warnings are deliberate.
 
-### ERROR - `FILE_TOO_LARGE` on `stockfish.js`
+### ~~ERROR - `FILE_TOO_LARGE` on `stockfish.js`~~ Fixed in v3.2.0
 
-The engine is ~10 MB and the linter will not parse files over 5 MB, so it
-cannot scan it automatically.
+This used to be the one thing standing between the extension and an AMO listing, and AMO's
+validator did stop the first submission on it:
 
-This is why AMO demands the source submission: a human reviewer verifies the
-binary instead. Provide `source-<tag>.zip` and the reviewer notes and the review
-has what it needs - the notes include the two commands that prove the shipped
-file is byte-identical to the upstream Stockfish build, against the checksum
-pinned in `stockfish.js.sha256`.
+```
+1 error, 2 warnings, 0 notices
+File is too large to parse.  ->  stockfish.js
+```
 
-**If AMO's server-side validation rejects the upload outright on this error**
-rather than routing it to manual review, the options, worst to best:
+The linter will not parse a JavaScript file over 5 MB, and the ASM.JS engine was 10.5 MB of
+JavaScript. Even where it does not hard-block, an unscannable file means **manual review for
+every future version** - a permanent tax rather than a one-off.
 
-1. Ask on the add-ons developer forum for a manual-review exception. Bundling a
-   chess engine is a normal thing to do and the source is public.
-2. Split the engine into sub-5 MB parts fetched and concatenated before the
-   Worker blob is created. Do **not** do this by renaming JavaScript to `.txt`
-   to dodge the scanner - that reads as evasion and is worse than the problem.
-3. Ship Firefox unlisted (self-distributed, signed but not on AMO) and keep
-   Chrome as the listed channel.
+Fixed by bundling a different upstream build: `stockfish-18-lite-single` instead of
+`stockfish-18-asm`. Same strength tier, but the engine is a real `.wasm` binary beside a
+21 KB loader, and linters do not parse binaries. `npm run lint:ff` now reports `errors 0`,
+and the package went from 10.6 MiB to 5.5 MiB zipped as a bonus.
 
-Do not pre-emptively rebuild the packaging for this. Try the upload first.
+Renaming JavaScript to `.txt` to hide it from the scanner was considered and rejected - it
+reads as evasion and is worse than the problem.
 
 ### WARNING ×2 - `KEY_FIREFOX_UNSUPPORTED_BY_MIN_VERSION`
 

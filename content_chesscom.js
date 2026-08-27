@@ -75,8 +75,14 @@ function initEngine() {
     fetch(chrome.runtime.getURL('stockfish.js'))
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
       .then(src => {
+        // The engine is WebAssembly: the loader is a small .js file and the
+        // 7 MB binary sits beside it. From a blob the loader cannot resolve a
+        // relative path, so it reads the .wasm URL out of the fragment of its
+        // own worker URL (self.location.hash). Both files are packaged; this
+        // is still a package-internal URL, not a download.
+        const wasmUrl = chrome.runtime.getURL('stockfish.wasm');
         const blobUrl = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
-        sfWorker = new Worker(blobUrl);
+        sfWorker = new Worker(blobUrl + '#' + encodeURIComponent(wasmUrl));
         URL.revokeObjectURL(blobUrl);
         sfWorker.onmessage = onEngineMessage;
         sfWorker.onerror = (e) => {
@@ -304,7 +310,7 @@ function showChesscomBoard(fen, color, strengthSetting) {
     showStatusBadge(`Stockfish ${strength.label} · loading engine…`);
     // Say plainly that a new game has started — the board looks the same as the
     // one that just ended, so without this it is not obvious anything changed.
-    showBanner(`♟ New game vs Stockfish (${strength.label}) — you play ` +
+    showBanner(`♟ New game vs Stockfish (${strength.label}) - you play ` +
                (playerSide === 'w' ? 'White' : 'Black'), 6000);
 
     initEngine().then(() => {

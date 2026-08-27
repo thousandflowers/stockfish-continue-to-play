@@ -7,7 +7,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 VERSION="$(python3 -c 'import json;print(json.load(open("manifest.json"))["version"])')"
-[ -f stockfish.js ] || { echo "✗ stockfish.js missing - run scripts/download-stockfish.sh" >&2; exit 1; }
+for f in stockfish.js stockfish.wasm; do
+  [ -f "$f" ] || { echo "✗ $f missing - run scripts/download-stockfish.sh" >&2; exit 1; }
+done
 bash scripts/download-stockfish.sh >/dev/null   # re-verifies the pinned checksum
 
 # Everything that ships, minus the manifest (added per-target below).
@@ -20,6 +22,7 @@ PAYLOAD=(
   lib
   icons
   stockfish.js
+  stockfish.wasm
   LICENSE
   LICENSE.stockfish
   LICENSE.MIT

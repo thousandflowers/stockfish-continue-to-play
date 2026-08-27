@@ -1,8 +1,10 @@
 # Store listing - copy to paste into the dashboards
 
-Everything a reviewer or a form asks for, written out. Copy the blocks verbatim; they were
-written against the audit in [`../CWS-AUDIT.md`](../CWS-AUDIT.md), so the answers and the code
-agree.
+Everything a reviewer or a form asks for, written out. Copy the blocks verbatim: each answer
+was written against the shipped code and re-checked against it, so the two agree. Where an
+answer depends on how the engine is packaged - the remote-code question above all - the
+reasoning is in [`../vendor/STOCKFISH-PROVENANCE.md`](../vendor/STOCKFISH-PROVENANCE.md) and
+[`../docs/PUBLISHING.md`](../docs/PUBLISHING.md).
 
 Assets in this folder:
 
@@ -143,9 +145,12 @@ account data, cookies, or anything the user did not already have on screen.
 Answer **"No, I am not using remote code."**
 
 ```
-All code, including the Stockfish engine, is contained in the package. The engine file is
-read from the extension's own package with chrome.runtime.getURL() and run in a Web Worker.
-Nothing is fetched from the network at runtime; the extension works with the browser offline.
+All code, including the Stockfish engine, is contained in the package. The engine ships as
+two packaged files: a small JavaScript loader and a WebAssembly binary. The loader is read
+from the extension's own package with chrome.runtime.getURL() and run in a Web Worker, and
+it is given the packaged .wasm through a chrome.runtime.getURL() address as well. Nothing is
+fetched from the network at runtime; the extension works with the browser offline, and the
+test suite verifies that by running the whole flow with the browser context set offline.
 ```
 
 This is the answer that matters most. A reviewer who finds `new Worker(blobUrl)` in
@@ -175,7 +180,7 @@ the question before it is asked.
 
 - Upload the **firefox** zip, not the chrome one. `npm run package` builds both;
   the Firefox one has `manifest-firefox.json` renamed to `manifest.json` inside it.
-- AMO requires a **source-code submission** because `stockfish.js` is minified vendored code.
+- AMO requires a **source-code submission** because the vendored engine loader is minified.
   The build instructions are in [`../docs/AMO-SOURCE-SUBMISSION.md`](../docs/AMO-SOURCE-SUBMISSION.md);
   paste that file's "Notes for the reviewer" section into the source-upload form.
 - The add-on id is `stockfish-continue@thousandflowers` and is permanent once published.

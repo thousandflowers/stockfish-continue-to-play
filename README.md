@@ -41,7 +41,7 @@ in-page, so the game never leaves Chess.com.
 
 - **Inline on the real board** - no redirect, no new tab; you keep playing on the Chess.com board you were already on.
 - **Adaptive difficulty** - Stockfish's `UCI_Elo` is matched to the opponent's rating read from the page.
-- **No servers, no telemetry** - Stockfish runs entirely in your browser. Nothing is uploaded; it works offline.
+- **No servers, no telemetry** - Stockfish runs entirely in your browser, as WebAssembly. Nothing is uploaded; it works offline, and that is verified by the test suite, not just claimed.
 - **Click or drag** - move pieces either way; legal destinations are highlighted; promotions auto-queen.
 - **Correct chess** - castling, en-passant, checkmate/stalemate and repetition are handled by the engine itself (moves are replayed to Stockfish).
 - **On/off toggle** - a popup to disable it when you don't want it.
@@ -82,7 +82,7 @@ Add-on** and pick the `manifest.json` inside the unzipped folder.
 git clone https://github.com/thousandflowers/stockfish-continue-to-play.git
 cd stockfish-continue-to-play
 
-# 2. Download the Stockfish engine (~10 MB, kept out of git, checksum-verified)
+# 2. Download the Stockfish engine (~7 MB, kept out of git, checksum-verified)
 bash scripts/download-stockfish.sh
 
 # 3a. Chrome / Edge / Brave / Arc / Opera
@@ -93,9 +93,9 @@ bash scripts/download-stockfish.sh
 #     about:debugging#/runtime/this-firefox → "Load Temporary Add-on" → pick manifest.json
 ```
 
-> `stockfish.js` (~10 MB) is excluded from git to keep clones lean. The
-> [download script](scripts/download-stockfish.sh) fetches it and verifies it against
-> the pinned checksum in `stockfish.js.sha256`.
+> The engine - `stockfish.js` (21 KB loader) and `stockfish.wasm` (7 MB) - is excluded
+> from git to keep clones lean. The [download script](scripts/download-stockfish.sh)
+> fetches both and verifies them against the checksums pinned in `stockfish.sha256`.
 
 ---
 
