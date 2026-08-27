@@ -310,7 +310,7 @@ function showChesscomBoard(fen, color, strengthSetting) {
     showStatusBadge(`Stockfish ${strength.label} · loading engine…`);
     // Say plainly that a new game has started — the board looks the same as the
     // one that just ended, so without this it is not obvious anything changed.
-    showBanner(`♟ New game vs Stockfish (${strength.label}) — you play ` +
+    showBanner(`♟ New game vs Stockfish (${strength.label}) - you play ` +
                (playerSide === 'w' ? 'White' : 'Black'), 6000);
 
     initEngine().then(() => {

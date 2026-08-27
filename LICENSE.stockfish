@@ -1,5 +1,5 @@
-Stockfish — licence and copyright notices for the engine bundled with this
-extension as `stockfish.js`.
+Stockfish - licence and copyright notices for the engine bundled with this
+extension as `stockfish.js` (loader) and `stockfish.wasm` (compiled engine).
 
 -------------------------------------------------------------------------------
 1. Upstream Stockfish copyright notice, quoted verbatim from

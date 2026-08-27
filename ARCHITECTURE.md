@@ -82,7 +82,7 @@ to the strongest explicit rating node on the page, then to 1500.
 ├── popup.html / popup.js # On/off toggle
 ├── stockfish.js          # Stockfish loader (21 KB, downloaded, git-ignored)
 ├── stockfish.wasm        # Stockfish engine (7 MB, downloaded, git-ignored)
-├── stockfish.js.sha256   # Pinned engine checksum
+├── stockfish.sha256      # Pinned engine checksums (both files)
 ├── manifest.json         # Chrome MV3 manifest
 ├── manifest-firefox.json # Firefox MV3 manifest (Gecko 128+)
 ├── tests/                # vitest (jsdom): chess-core + chess-dom, with HTML fixtures
