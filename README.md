@@ -42,7 +42,7 @@ in-page, so the game never leaves Chess.com.
 - **Inline on the real board** - no redirect, no new tab; you keep playing on the Chess.com board you were already on.
 - **Adaptive difficulty** - Stockfish's `UCI_Elo` is matched to the opponent's rating read from the page.
 - **No servers, no telemetry** - Stockfish runs entirely in your browser, as WebAssembly. Nothing is uploaded; it works offline, and that is verified by the test suite, not just claimed.
-- **Click or drag** - move pieces either way; legal destinations are highlighted; promotions auto-queen.
+- **Click or drag** - move pieces either way, with legal destinations highlighted. Promotion opens the same four-piece picker Chess.com uses, and you castle the way you already do there: drop the king on your own rook.
 - **Correct chess** - castling, en-passant, checkmate/stalemate and repetition are handled by the engine itself (moves are replayed to Stockfish).
 - **On/off toggle** - a popup to disable it when you don't want it.
 - **Open source** - GPLv3, because it bundles Stockfish.
@@ -126,6 +126,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local dev setup, testing, and PR guid
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the FEN extraction, the move-history engine
 model, difficulty mapping, and project structure.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for what changed in each version, and whether it is
+worth re-downloading.
 
 ---
 
