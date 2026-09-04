@@ -1,8 +1,8 @@
 name: release
 
-# Pushing a v* tag builds the zips, attaches them to the GitHub Release and
-# uploads the Chrome package to the store. Google still reviews it by hand,
-# so this removes the dashboard trip, not the wait.
+# Pushing a v* tag builds the zips, attaches them to the GitHub Release, and
+# submits the package to both stores for review. Google and Mozilla still
+# review by hand, so this removes the dashboard trip, not the wait.
 on:
   push:
     tags: ['v*']
@@ -19,8 +19,14 @@ jobs:
       CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
       CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
       CWS_ITEM_ID: ${{ secrets.CWS_ITEM_ID }}
+      AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+      AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The AMO source archive is `git archive` of the tag, so the tag has
+          # to be a real object here, not just the ref that triggered the run.
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -61,8 +67,14 @@ jobs:
             "stockfish-continue-to-play-firefox-${GITHUB_REF_NAME#v}.zip" \
             --clobber
 
-      # Skipped, not failed, when the secrets are absent - so a tag still
-      # produces a release on a fork, or before the OAuth client exists.
-      - name: Upload to the Chrome Web Store and submit for review
+      # Both store steps are skipped, not failed, when their secrets are
+      # absent - so a tag still produces a release on a fork, or before the
+      # credentials exist. They are separate steps on purpose: one store being
+      # unreachable should not hold the other back.
+      - name: Submit to the Chrome Web Store
         if: env.CWS_REFRESH_TOKEN != ''
         run: npm run publish:cws -- --publish
+
+      - name: Submit to addons.mozilla.org
+        if: env.AMO_JWT_SECRET != ''
+        run: npm run publish:amo

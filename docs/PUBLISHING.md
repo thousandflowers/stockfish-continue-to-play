@@ -110,34 +110,6 @@ URL). Set up an OAuth client once:
 
 Keep those four values out of the repo. They publish under your name.
 
-### Later releases - no command
-
-`.github/workflows/release.yml` does all of the above on a pushed tag. Add the
-same four values as repository secrets once:
-
-```bash
-gh secret set CWS_CLIENT_ID
-gh secret set CWS_CLIENT_SECRET
-gh secret set CWS_REFRESH_TOKEN
-gh secret set CWS_ITEM_ID
-```
-
-After that, cutting a release is:
-
-```bash
-# bump manifest.json + manifest-firefox.json, write the CHANGELOG entry, merge
-git tag v3.3.0 && git push origin v3.3.0
-```
-
-which runs the tests, refuses the tag if it disagrees with `manifest.json`,
-builds both zips, attaches them to the GitHub Release and submits the Chrome
-package for review. Without the secrets the store step is skipped rather than
-failed, so the tag still produces a release.
-
-What this does **not** remove: Google's review still takes days, and the
-listing copy, screenshots and privacy answers stay web-form only. The API
-ships packages, nothing else.
-
 ---
 
 ## Firefox / AMO
@@ -175,7 +147,52 @@ npm run publish:amo              # listed
 ```
 
 The script re-runs the linter before uploading and refuses to ship a package
-that fails it. Source upload for each new version is still manual.
+that fails it. It also builds the source archive and attaches it to the same
+upload, with the reviewer notes lifted straight out of the fenced block in
+[`AMO-SOURCE-SUBMISSION.md`](AMO-SOURCE-SUBMISSION.md) - there is no second copy
+of those notes to forget. Nothing about a later release is manual.
+
+The listing copy, screenshots and category are web-form only, and only matter
+for the first submission.
+
+---
+
+## Both stores, from one pushed tag
+
+`.github/workflows/release.yml` does everything above when a `v*` tag lands.
+Add the six values as repository secrets once:
+
+```bash
+gh secret set CWS_CLIENT_ID       # Chrome
+gh secret set CWS_CLIENT_SECRET
+gh secret set CWS_REFRESH_TOKEN
+gh secret set CWS_ITEM_ID
+gh secret set AMO_JWT_ISSUER      # Firefox
+gh secret set AMO_JWT_SECRET
+```
+
+After that, cutting a release is:
+
+```bash
+# bump manifest.json + manifest-firefox.json, write the CHANGELOG entry, merge
+git tag v3.3.0 && git push origin v3.3.0
+```
+
+which runs the tests, refuses the tag if it disagrees with `manifest.json`,
+builds both zips, attaches them to the GitHub Release, then submits the Chrome
+package to Google and the Firefox package - with its source archive and
+reviewer notes - to Mozilla.
+
+The two store steps are separate, and each is skipped rather than failed when
+its own secrets are missing. One store being unreachable does not hold the
+other back, and a tag pushed on a fork still produces a release.
+
+### What a tag still does not do
+
+Both stores review by hand: Google usually takes days, Mozilla anything from
+minutes to a week. Neither API can set the listing copy, the screenshots, the
+category or Chrome's privacy answers - those are web forms, and they only need
+filling once. What the tag automates is every release after the first.
 
 ---
 
