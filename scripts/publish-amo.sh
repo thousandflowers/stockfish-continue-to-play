@@ -10,7 +10,8 @@
 # under your name.
 #
 # The listing itself (description, screenshots, categories) is filled in on the
-# AMO site, not here - see docs/PUBLISHING.md. This script handles the package.
+# AMO site, not here - see docs/PUBLISHING.md. This script handles the package,
+# the source archive AMO requires, and the reviewer notes that go with it.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -36,15 +37,28 @@ npx web-ext lint --source-dir "$STAGE" --output text || {
   exit 1
 }
 
-echo "→ uploading v${VERSION} to AMO (channel: ${CHANNEL})"
+# AMO wants the human-readable source beside the package, because the vendored
+# loader is minified and the engine is a compiled binary. Uploading it in the same
+# call is what keeps a listed submission from stalling in review.
+SOURCE="source-v${VERSION}.zip"
+[ -f "$SOURCE" ] || bash scripts/source-archive.sh "v${VERSION}"
+
+# The reviewer notes live in one place - the fenced block in the doc - so they
+# cannot drift from what a human would have pasted into the form.
+NOTES="$STAGE/amo-metadata.json"
+python3 scripts/amo-metadata.py "$NOTES"
+
+echo "→ uploading v${VERSION} to AMO (channel: ${CHANNEL}), with $SOURCE and the reviewer notes"
 npx web-ext sign \
   --source-dir "$STAGE" \
   --artifacts-dir "$ROOT/dist-amo" \
   --channel "$CHANNEL" \
+  --upload-source-code "$ROOT/$SOURCE" \
+  --amo-metadata "$NOTES" \
   --api-key "$AMO_JWT_ISSUER" \
   --api-secret "$AMO_JWT_SECRET"
 
 echo
-echo "✓ uploaded. A listed submission still needs, on the AMO site:"
-echo "   1. the source archive  ->  npm run source-archive"
-echo "   2. the listing copy    ->  store/LISTING.md"
+echo "✓ uploaded and in review, source archive and reviewer notes included."
+echo "  Only the listing copy is web-form only, and only for a first submission:"
+echo "  store/LISTING.md"

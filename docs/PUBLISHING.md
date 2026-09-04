@@ -63,24 +63,43 @@ URL). Set up an OAuth client once:
 
 1. <https://console.cloud.google.com> → new project → enable the
    **Chrome Web Store API**.
-2. **Credentials** → *Create credentials* → *OAuth client ID* → **Desktop app**.
+2. **OAuth consent screen** → *External*, add the developer account under
+   *Test users*, then move the app to **In production**. A client left in
+   *Testing* issues refresh tokens that expire after seven days, and the
+   publish job starts failing a week after it was set up.
+3. **Credentials** → *Create credentials* → *OAuth client ID* → **Web
+   application**, with `http://localhost:8080` as an authorised redirect URI.
    Keep the client id and secret.
-3. Get a refresh token: visit, in a browser signed in as the developer account,
+
+   > The redirect matters. This walkthrough used to say *Desktop app* and
+   > `urn:ietf:wg:oauth:2.0:oob`, pasting back a code Google printed on screen.
+   > Google shut that flow down - it now answers `redirect_uri does not comply
+   > with google policies`. A loopback redirect is the replacement.
+
+4. Get a code. Signed in as the developer account, visit:
 
    ```
-   https://accounts.google.com/o/oauth2/auth?response_type=code&scope=https://www.googleapis.com/auth/chromewebstore&client_id=YOUR_CLIENT_ID&redirect_uri=urn:ietf:wg:oauth:2.0:oob
+   https://accounts.google.com/o/oauth2/auth?response_type=code&access_type=offline&prompt=consent&scope=https://www.googleapis.com/auth/chromewebstore&client_id=YOUR_CLIENT_ID&redirect_uri=http://localhost:8080
    ```
 
-   then exchange the code it shows you:
+   The browser ends on a dead `localhost:8080` page. That is expected - nothing
+   is listening, and nothing needs to be. The code is in the address bar after
+   `?code=`; URL-decode it (`%2F` is `/`).
+
+5. Exchange it for a refresh token:
 
    ```bash
    curl -s -X POST https://oauth2.googleapis.com/token \
      -d client_id=YOUR_CLIENT_ID -d client_secret=YOUR_CLIENT_SECRET \
      -d code=THE_CODE -d grant_type=authorization_code \
-     -d redirect_uri=urn:ietf:wg:oauth:2.0:oob | jq .refresh_token
+     -d redirect_uri=http://localhost:8080 | jq .refresh_token
    ```
 
-4. Then:
+   `access_type=offline` and `prompt=consent` in step 4 are what make Google
+   return a refresh token at all. Without them the response carries an access
+   token that dies in an hour and no way to renew it.
+
+6. Then:
 
    ```bash
    export CWS_CLIENT_ID=... CWS_CLIENT_SECRET=... CWS_REFRESH_TOKEN=... CWS_ITEM_ID=...
@@ -128,7 +147,52 @@ npm run publish:amo              # listed
 ```
 
 The script re-runs the linter before uploading and refuses to ship a package
-that fails it. Source upload for each new version is still manual.
+that fails it. It also builds the source archive and attaches it to the same
+upload, with the reviewer notes lifted straight out of the fenced block in
+[`AMO-SOURCE-SUBMISSION.md`](AMO-SOURCE-SUBMISSION.md) - there is no second copy
+of those notes to forget. Nothing about a later release is manual.
+
+The listing copy, screenshots and category are web-form only, and only matter
+for the first submission.
+
+---
+
+## Both stores, from one pushed tag
+
+`.github/workflows/release.yml` does everything above when a `v*` tag lands.
+Add the six values as repository secrets once:
+
+```bash
+gh secret set CWS_CLIENT_ID       # Chrome
+gh secret set CWS_CLIENT_SECRET
+gh secret set CWS_REFRESH_TOKEN
+gh secret set CWS_ITEM_ID
+gh secret set AMO_JWT_ISSUER      # Firefox
+gh secret set AMO_JWT_SECRET
+```
+
+After that, cutting a release is:
+
+```bash
+# bump manifest.json + manifest-firefox.json, write the CHANGELOG entry, merge
+git tag v3.3.0 && git push origin v3.3.0
+```
+
+which runs the tests, refuses the tag if it disagrees with `manifest.json`,
+builds both zips, attaches them to the GitHub Release, then submits the Chrome
+package to Google and the Firefox package - with its source archive and
+reviewer notes - to Mozilla.
+
+The two store steps are separate, and each is skipped rather than failed when
+its own secrets are missing. One store being unreachable does not hold the
+other back, and a tag pushed on a fork still produces a release.
+
+### What a tag still does not do
+
+Both stores review by hand: Google usually takes days, Mozilla anything from
+minutes to a week. Neither API can set the listing copy, the screenshots, the
+category or Chrome's privacy answers - those are web forms, and they only need
+filling once. What the tag automates is every release after the first.
 
 ---
 
@@ -144,7 +208,7 @@ validator did stop the first submission on it:
 
 ```
 1 error, 2 warnings, 0 notices
-File is too large to parse.  ->  stockfish.js
+File is too large to parse.  →  stockfish.js
 ```
 
 The linter will not parse a JavaScript file over 5 MB, and the ASM.JS engine was 10.5 MB of
