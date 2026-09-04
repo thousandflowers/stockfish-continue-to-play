@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Stockfish Continue to Play",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "description": "After a game ends on Chess.com, continue the position vs Stockfish AI on the same page. One click, automatic.",
   "permissions": [
     "storage"

@@ -4,6 +4,19 @@ All notable changes to this project are documented here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html), and each entry links
 to the release its zips were published under.
 
+## [3.2.1] - 2026-09-04
+
+### Changed
+
+- **New icon.** A seahorse chess piece standing on the board, replacing the
+  circuit-board knight. The small sizes are not the same picture as the large
+  ones: at 16 px an eight-square board is two pixels per square and the piece
+  dissolves into the pattern, so 16 and 32 are cut down to the piece itself and
+  keep only the two or three squares behind it. `scripts/make-icons.py`
+  regenerates every size from `store/icon-source-534.png`, finding the piece by
+  its own darkness rather than by hardcoded coordinates, so the next change of
+  artwork is one command.
+
 ## [3.2.0] - 2026-08-27
 
 ### Changed

@@ -17,7 +17,7 @@ Assets in this folder:
 | `screenshots/5-strength-and-on-off.png` | screenshot 5 | no |
 | `promo-tile-440x280.png` | CWS "small promo tile" | expected |
 | `store-icon-128.png` | CWS store icon | **yes** |
-| `icon-source-640.png` | master artwork, not uploaded | - |
+| `icon-source-534.png` | master artwork, not uploaded | - |
 
 All screenshots are 1280x800 PNG, which is one of the two sizes Chrome accepts (the other is
 640x400). There is no 1400x560 marquee tile here: it is only used for the homepage
