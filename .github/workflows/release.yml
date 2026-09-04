@@ -1,0 +1,68 @@
+name: release
+
+# Pushing a v* tag builds the zips, attaches them to the GitHub Release and
+# uploads the Chrome package to the store. Google still reviews it by hand,
+# so this removes the dashboard trip, not the wait.
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # to attach the zips to the release
+    env:
+      # At job level, not on the step: a step cannot read the `secrets` context
+      # from its own `if`, but it can read `env`.
+      CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+      CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+      CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+      CWS_ITEM_ID: ${{ secrets.CWS_ITEM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+      # The tag is public the moment it is pushed. Catching a version mismatch
+      # here beats shipping v3.3.0 to the store labelled 3.2.0.
+      - name: The tag and the manifest must agree
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          manifest="$(python3 -c 'import json;print(json.load(open("manifest.json"))["version"])')"
+          [ "$tag" = "$manifest" ] || {
+            echo "✗ tag $GITHUB_REF_NAME says $tag, manifest.json says $manifest" >&2
+            exit 1
+          }
+          echo "✓ both say $manifest"
+
+      - name: Cache the Stockfish engine
+        uses: actions/cache@v4
+        with:
+          path: |
+            stockfish.js
+            stockfish.wasm
+          key: stockfish-${{ hashFiles('stockfish.sha256') }}
+      - name: Fetch the engine if the cache missed
+        run: bash scripts/download-stockfish.sh
+
+      - run: npm run package
+
+      - name: Attach the zips to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            "stockfish-continue-to-play-chrome-${GITHUB_REF_NAME#v}.zip" \
+            "stockfish-continue-to-play-firefox-${GITHUB_REF_NAME#v}.zip" \
+            --clobber
+
+      # Skipped, not failed, when the secrets are absent - so a tag still
+      # produces a release on a fork, or before the OAuth client exists.
+      - name: Upload to the Chrome Web Store and submit for review
+        if: env.CWS_REFRESH_TOKEN != ''
+        run: npm run publish:cws -- --publish
