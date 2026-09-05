@@ -58,13 +58,22 @@ jobs:
 
       - run: npm run package
 
-      - name: Attach the zips to the release
+      # `gh release upload` fails on a tag that has no release yet, and a tag
+      # pushed from a terminal has none. Create it from the CHANGELOG section,
+      # which also means an undocumented version fails the tag instead of
+      # shipping with empty notes.
+      - name: Publish the GitHub Release with the zips
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          version="${GITHUB_REF_NAME#v}"
+          python3 scripts/release-notes.py "$version" > release-notes.md
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" \
+                 --title "$GITHUB_REF_NAME" --notes-file release-notes.md
           gh release upload "$GITHUB_REF_NAME" \
-            "stockfish-continue-to-play-chrome-${GITHUB_REF_NAME#v}.zip" \
-            "stockfish-continue-to-play-firefox-${GITHUB_REF_NAME#v}.zip" \
+            "stockfish-continue-to-play-chrome-${version}.zip" \
+            "stockfish-continue-to-play-firefox-${version}.zip" \
             --clobber
 
       # Both store steps are skipped, not failed, when their secrets are

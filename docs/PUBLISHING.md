@@ -178,6 +178,10 @@ After that, cutting a release is:
 git tag v3.3.0 && git push origin v3.3.0
 ```
 
+The CHANGELOG entry is not optional: the release notes are that section, and a
+tag with no `## [3.3.0]` heading fails before anything is uploaded. That is on
+purpose - it is easier to write the entry than to explain a silent release.
+
 which runs the tests, refuses the tag if it disagrees with `manifest.json`,
 builds both zips, attaches them to the GitHub Release, then submits the Chrome
 package to Google and the Firefox package - with its source archive and
