@@ -261,7 +261,14 @@ function injectBoardStyle() {
     '@keyframes _sfctshake{0%,100%{transform:var(--sfct-xy)}25%{transform:var(--sfct-xy) translateX(-6%)}75%{transform:var(--sfct-xy) translateX(6%)}}',
     '.sfct-shake{animation:_sfctshake .32s ease-in-out}',
     '.sfct-sel{box-shadow:inset 0 0 0 3px #ffd700,0 0 12px rgba(255,215,0,.5);border-radius:4px}',
-    '.sfct-dot::after{content:"";position:absolute;width:28%;height:28%;border-radius:50%;background:rgba(0,0,0,.18);top:36%;left:36%}',
+    // Painted as radial gradients rather than a fixed-size child so they scale
+    // with the board, and carrying a pale rim so they read on Chess.com's light
+    // AND dark squares — flat 18% black vanished on the dark ones.
+    '.sfct-dot{background:radial-gradient(circle,rgba(0,0,0,.45) 0 15%,rgba(255,255,255,.4) 15% 18.5%,transparent 19%)}',
+    // A capture destination has a piece on it, so a dot would be hidden behind
+    // the sprite. Ring the piece instead, the way Chess.com marks one.
+    '.sfct-ring{background:radial-gradient(circle,transparent 0 58%,rgba(255,255,255,.4) 58% 61%,' +
+      'rgba(0,0,0,.45) 61% 76%,rgba(255,255,255,.4) 76% 79%,transparent 80%)}',
   ].join('');
   document.head.appendChild(bs);
 }
@@ -480,8 +487,11 @@ function syncBoardToState() {
     for (const dest of dests || []) {
       const dot = document.createElement('div');
       dot.setAttribute('data-sfct', 'dot');
-      dot.className = 'sfct-dot';
-      dot.style.cssText = 'position:absolute;top:0;left:0;width:12.5%;height:12.5%;z-index:4;pointer-events:none';
+      // z-index 6 puts the marker ABOVE the pieces (5). At 4 the ring — and the
+      // old dot — sat behind the sprite, so the captures were exactly the
+      // destinations you could not see.
+      dot.className = boardData[dest] ? 'sfct-ring' : 'sfct-dot';
+      dot.style.cssText = 'position:absolute;top:0;left:0;width:12.5%;height:12.5%;z-index:6;pointer-events:none';
       place(dot, dest);
       board.appendChild(dot);
     }
