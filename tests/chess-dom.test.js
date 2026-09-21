@@ -754,3 +754,49 @@ describe('getOpponentElo picks the opponent, not the bigger number', () => {
     expect(d.getOpponentElo()).toBe(1740);
   });
 });
+
+// ── getPlayerColor: you keep your own pieces ─────────────────────────────────
+// Getting this wrong hands you your opponent's pieces and gives Stockfish
+// yours. It regressed once by widening the row search to every [class*="player"]
+// and keeping the OUTERMOST match: a wrapper around both rows then stood in for
+// the top row, and it contains your own "You" tag, so every board read "black".
+describe('getPlayerColor is not fooled by a wrapper', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  const wrapped = () => {
+    document.body.innerHTML =
+      '<div class="players-wrapper board-layout-players">' +
+      '<div class="board-layout-player board-layout-top"><div class="player-row-component player-row-top">' +
+      '<span class="cc-user-rating-white">(463)</span></div></div>' +
+      '<div class="board-layout-player board-layout-bottom"><div class="player-row-component">' +
+      '<span class="user-tagline-you">You</span><span class="cc-user-rating-white">(433)</span></div></div>' +
+      '</div>';
+  };
+
+  it('you are White when the "You" tag is at the bottom', () => {
+    wrapped();
+    expect(d.getPlayerColor()).toBe('white');
+  });
+  it('and the opponent is still read from the top row', () => {
+    wrapped();
+    expect(d.getOpponentElo()).toBe(463);
+  });
+  it('the row lookup returns a row, never the wrapper around both', () => {
+    wrapped();
+    const { top, bottom } = d.playerRows();
+    // Innermost by design, so the class is player-row-top rather than the
+    // board-layout-top around it - what matters is that neither is the
+    // wrapper, which would contain the other row.
+    expect(top.className).toMatch(/top/);
+    expect(bottom.contains(top)).toBe(false);
+    expect(top.contains(bottom)).toBe(false);
+    expect(top.textContent).toContain('463');
+    expect(bottom.textContent).toContain('433');
+  });
+  it('a flipped board still means you are Black', () => {
+    wrapped();
+    const b = document.createElement('wc-chess-board');
+    b.setAttribute('flipped', '');
+    document.body.appendChild(b);
+    expect(d.getPlayerColor()).toBe('black');
+  });
+});
