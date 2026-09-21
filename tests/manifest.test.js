@@ -39,7 +39,7 @@ describe('manifests', () => {
   // The page-world script is the only thing here that can see Chess.com's own
   // JavaScript, so what it is and what it may do is worth stating outright.
   it.each([['chrome', chrome], ['firefox', firefox]])(
-    'run exactly one script in the page world, and it only reads (%s)',
+    'run exactly one script in the page world, and it cannot end a real game (%s)',
     (_name, m) => {
       const main = m.content_scripts.filter(c => c.world === 'MAIN');
       expect(main).toHaveLength(1);
@@ -49,10 +49,13 @@ describe('manifests', () => {
       const code = readFileSync(path.join(root, 'page-bridge.js'), 'utf8')
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
-      // Nothing that changes a game, and nothing that holds a permission.
-      for (const forbidden of ['.move(', 'setMode', 'resign', 'agreeDraw', 'chrome.']) {
+      // Nothing that ENDS or alters a real game is reachable at all, and nothing
+      // that holds a permission. Moving pieces is reachable, but only inside the
+      // result gate - tests/page-bridge.test.js drives that one for real.
+      for (const forbidden of ['setMode', 'resign', 'agreeDraw', 'chrome.']) {
         expect(code).not.toContain(forbidden);
       }
+      expect(code).toContain('getResult');
       expect(m.content_scripts.filter(c => c.world !== 'MAIN')).toHaveLength(1);
     },
   );

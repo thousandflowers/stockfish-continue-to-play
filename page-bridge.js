@@ -10,11 +10,18 @@
 // and a hundred more — everything the content script currently rebuilds by
 // scraping piece divs and parsing the URL.
 //
-// This file is READ-ONLY by construction. It calls nothing that changes a game:
-// no move(), no setMode(), no resign(), no agreeDraw(). It publishes what it
-// read over window.postMessage and stops there. It cannot do more even by
-// accident — the page world has no access to chrome.*, so it holds no
-// permissions of its own.
+// It publishes what it reads over window.postMessage, and answers a small set of
+// commands from the isolated world.
+//
+// FAIR PLAY. Anything that changes the board is refused here unless Chess.com's
+// own game reports a result — which is "*" for as long as one is being played.
+// The content script has already reached the same conclusion from the page's
+// DOM before it asks. Two independent checks, in two different worlds, on two
+// different sources, and neither can stand in for the other: a stale game-over
+// node cannot fool the game object, and a misread result cannot get past the
+// DOM. Nothing that ends or alters a real game is reachable from here at all —
+// no setMode, no resign, no agreeDraw — and the page world has no access to
+// chrome.*, so this holds no permissions of its own.
 (() => {
   const CHANNEL = 'sfct-page-state';
   const POLL_MS = 400;
@@ -58,4 +65,45 @@
 
   publish();
   setInterval(publish, POLL_MS);
+
+  // ── Commands ───────────────────────────────────────────────────────────────
+  // Only these four. `legal` reads; the other three change the board and are
+  // gated on the game having a result.
+  const CHANGES = new Set(['continuation', 'move', 'reset']);
+
+  function hasResult(game) {
+    try {
+      const r = game.getResult();
+      return typeof r === 'string' && r !== '' && r !== '*';
+    } catch (_) { return false; }
+  }
+
+  const OPS = {
+    // Branch off the position being shown. Our moves then land in a variation
+    // beside the real game, which resetToMainLine() discards untouched.
+    continuation: (g) => g.createContinuation(),
+    move: (g, a) => g.move(a),
+    reset: (g) => g.resetToMainLine(),
+    legal: (g, a) => (a && a.square ? g.getLegalMovesForSquare(a.square) : g.getLegalMoves()),
+  };
+
+  window.addEventListener('message', (e) => {
+    if (e.source !== window) return;
+    const d = e.data;
+    if (!d || d.__sfct !== 'cmd' || !OPS[d.op]) return;
+    const reply = (ok, value) => window.postMessage(
+      { __sfct: 'cmd-reply', id: d.id, ok, value }, window.location.origin);
+    const el = board();
+    const game = el && el.game;
+    if (!game) return reply(false, 'nessuna partita');
+    if (CHANGES.has(d.op) && !hasResult(game)) return reply(false, 'partita in corso');
+    try {
+      const value = OPS[d.op](game, d.args);
+      // Returns are large and self-referential; the caller only needs to know it
+      // worked and where the board ended up.
+      reply(true, d.op === 'legal' ? (Array.isArray(value) ? value : null) : read(game, 'getFEN') || null);
+    } catch (err) {
+      reply(false, String(err).slice(0, 140));
+    }
+  });
 })();

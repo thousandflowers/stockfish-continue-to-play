@@ -50,12 +50,30 @@ let chesscomState = null;
 // case, which is exactly what shipped before, so the bridge can only add.
 let pageState = null;
 
+let _cmdId = 0;
+const _pending = new Map();
+
 window.addEventListener('message', (e) => {
   if (e.source !== window) return;
   const d = e.data;
-  if (!d || d.__sfct !== 'page-state') return;
-  pageState = d.state || null;
+  if (!d) return;
+  if (d.__sfct === 'page-state') { pageState = d.state || null; return; }
+  if (d.__sfct === 'cmd-reply') { _pending.get(d.id)?.({ ok: d.ok, value: d.value }); _pending.delete(d.id); }
 });
+
+// Ask the page world to do something. The bridge refuses anything that changes
+// the board unless Chess.com's own game reports a result, so this asking is only
+// ever half of the decision — the other half is the gate that let the trigger
+// appear in the first place.
+function pageCmd(op, args) {
+  if (!pageState) return Promise.resolve({ ok: false, value: 'nessun bridge' });
+  const id = ++_cmdId;
+  return new Promise((resolve) => {
+    _pending.set(id, resolve);
+    setTimeout(() => { if (_pending.delete(id)) resolve({ ok: false, value: 'timeout' }); }, 2500);
+    window.postMessage({ __sfct: 'cmd', id, op, args }, location.origin);
+  });
+}
 
 // Their board says which colour you are playing. The shape is not documented,
 // so only values we actually recognise are honoured — a wrong colour hands you
@@ -287,15 +305,17 @@ function removeGameOverModal() {
 }
 
 // ── Show / hide the inline board ─────────────────────────────────────────────
-function injectBoardStyle() {
+function injectBoardStyle(native) {
   if (document.getElementById('sfct-board-style')) return;
   const bs = document.createElement('style');
   bs.id = 'sfct-board-style';
   bs.textContent = [
-    // Chess.com's own pieces are hidden, never removed: dropping this style tag on
-    // stop hands the board straight back instead of leaving it blank.
-    'wc-chess-board [class*="piece"]:not([data-sfct]),chess-board [class*="piece"]:not([data-sfct]){display:none!important}',
-    '[data-sfct="piece"]{transition:transform var(--move-animation-duration,180ms) ease-out}',
+    // Only when we are drawing. In native mode Chess.com keeps its own pieces on
+    // the board and plays our moves itself, so there is nothing to hide.
+    ...(native ? [] : [
+      'wc-chess-board [class*="piece"]:not([data-sfct]),chess-board [class*="piece"]:not([data-sfct]){display:none!important}',
+      '[data-sfct="piece"]{transition:transform var(--move-animation-duration,180ms) ease-out}',
+    ]),
     // The king in check. Chess.com draws this with a VFX layer whose artwork is
     // not reachable from a class, so this is their red radial glow instead.
     //
@@ -355,6 +375,8 @@ function showChesscomBoard(fen, color, strengthSetting) {
       startFen: fen, moves: [], boardData: fenToBoard(fen),
       selectedSq: null, playerSide, engineSide, sideToMove, board,
       strengthSetting, finished: false,
+      // Chess.com draws the game when we can reach their board.
+      native: !!pageState,
       // Seconds per move in the game just played, when its clocks are on the page.
       gamePaceMs: (averageMoveSeconds() || 0) * 1000,
       yourPaces: [],
@@ -369,7 +391,11 @@ function showChesscomBoard(fen, color, strengthSetting) {
     chesscomState.seen.set(
       positionKey(chesscomState.boardData, sideToMove, fenCastling, fenEp), 1);
 
-    injectBoardStyle();
+    injectBoardStyle(chesscomState.native);
+    // Branch off the position being shown: our moves then land in a variation
+    // beside the real game, and resetToMainLine() on stop discards it and
+    // hands the game back exactly as it was.
+    if (chesscomState.native) pageCmd('continuation');
     syncBoardToState();
     attachPointerHandlers();
     startRefreshTimer();
@@ -403,6 +429,8 @@ function showChesscomBoard(fen, color, strengthSetting) {
 }
 
 function hideChesscomBoard() {
+  // Drop our variation and put their move list back on the real game.
+  if (chesscomState?.native) pageCmd('reset');
   if (chesscomState?._ptrCleanup) chesscomState._ptrCleanup();
   if (chesscomState?._refreshTimer) clearInterval(chesscomState._refreshTimer);
   releaseColumnFoot();
@@ -517,6 +545,7 @@ function syncBoardToState() {
       el.style.transform = `translate(${(flipped ? 7 - f : f) * 100}%,${(flipped ? r - 1 : 8 - r) * 100}%)`;
     };
 
+    if (!st.native) {
     const nodes = new Map();
     board.querySelectorAll(':scope > [data-sfct="piece"]').forEach(el => nodes.set(el.dataset.sq, el));
 
@@ -544,6 +573,11 @@ function syncBoardToState() {
       nodes.set(a.sq, el);
     }
 
+    }
+
+    // The checked king. Chess.com plays its own effect in native mode — the
+    // real one, an image asset on a VFX layer, not this approximation.
+    if (!st.native) {
     // A king in check keeps the red square while the check stands. The node is
     // REUSED, never rebuilt: recreating it restarts Chess.com's grow/wiggle, so
     // it replayed on every re-render — picking a piece up made the king twitch.
@@ -564,6 +598,8 @@ function syncBoardToState() {
         place(mark, checkedKing);
         replayCheck();
       }
+    }
+
     }
 
     // The square you picked up from, and where it can go. All three wear
@@ -664,8 +700,10 @@ function startRefreshTimer() {
       return;
     }
     // A Chess.com re-render can wipe our overlay children without replacing the
-    // board node — put them back.
-    if (!cur.querySelector(':scope > [data-sfct="piece"]')) syncBoardToState();
+    // board node — put them back. Not in native mode: there are never any of
+    // our pieces there, so this test is always true and would rebuild the
+    // markers once a second for nothing.
+    if (!chesscomState.native && !cur.querySelector(':scope > [data-sfct="piece"]')) syncBoardToState();
   }, REFRESH_INTERVAL_MS);
 }
 
@@ -824,6 +862,7 @@ function makePlayerMove(from, to, promo) {
   st.selectedSq = null;
   st.sideToMove = st.engineSide;
   recordMove(st, res.moved);
+  if (st.native) pageCmd('move', { from, to, promotion: promo || undefined });
   syncBoardToState();
   postCmd(enginePosition());
   engineThink();
@@ -841,6 +880,8 @@ function onEngineMove(uci) {
   st.moves.push(uci);
   st.sideToMove = st.playerSide;
   recordMove(st, res.moved);
+  if (st.native) pageCmd('move', { from: uci.slice(0, 2), to: uci.slice(2, 4),
+    promotion: uci.length > 4 ? uci[4] : undefined });
   st.turnStart = Date.now();
   syncBoardToState();
   updateStatus('Your move');
