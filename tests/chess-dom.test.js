@@ -613,3 +613,51 @@ describe('plyFromUrl', () => {
     expect(d.readSideToMove()).toBeNull(); // no board to ask, so: ask the player
   });
 });
+
+// ── isGameOver against the real Chess.com surfaces ───────────────────────────
+// Both vocabularies captured from live pages on 2026-09-22 by dumping every
+// class matching /game|result|review|over|analys|clock|tab|sidebar/. This is the
+// fair-play guarantee written down as a test: the trigger has to be possible on
+// the first and impossible on the second, from real data rather than from
+// confidence about what Chess.com renders.
+describe('isGameOver on the real surfaces', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  const render = (classes) => {
+    document.body.innerHTML = classes.map(c => `<div class="${c}"></div>`).join('');
+  };
+
+  // /game/live/<id>?…&move=20 — finished, result modal already dismissed.
+  const FINISHED = [
+    'board-layout-sidebar', 'clock-black', 'clock-component', 'clock-player-turn',
+    'game-buttons-container-component', 'game-icons-container-component', 'game-result',
+    'game-review-buttons-component', 'game-review-emphasis-component', 'game-tab-scrollable',
+    'new-game-buttons-buttons', 'new-game-buttons-component', 'quick-analysis-component',
+    'quick-analysis-tally', 'result-row', 'sidebar-component', 'sidebar-container',
+    'tabs-active', 'tabs-component', 'underlined-tabs-component',
+  ];
+  // /play/computer/Cliff-BOT — a game actually being played.
+  const IN_PROGRESS = [
+    'board-layout-sidebar', 'cc-popover', 'cc-sidebar-header-component',
+    'game-controls-controller-component', 'hover-square',
+    'play-controller-quick-analysis-animation', 'play-controller-quick-analysis-overflow',
+    'sidebar-accordion', 'sidebar-container', 'sidebar-controller-component',
+    'sidebar-controller-container', 'sidebar-link', 'sidebar-logo-image',
+  ];
+
+  it('a finished game counts, even with its modal dismissed', () => {
+    render(FINISHED);
+    expect(d.isGameOver()).toBe(true);
+  });
+  it('a game being played does NOT count', () => {
+    render(IN_PROGRESS);
+    expect(d.isGameOver()).toBe(false);
+  });
+  it('the left navigation alone is not a finished game', () => {
+    render(IN_PROGRESS.filter(c => c.startsWith('sidebar-')));
+    expect(d.isGameOver()).toBe(false);
+  });
+  it('a hidden result still does not count', () => {
+    document.body.innerHTML = '<div class="game-result" style="display:none"></div>';
+    expect(d.isGameOver()).toBe(false);
+  });
+});

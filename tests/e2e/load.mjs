@@ -447,6 +447,67 @@ ${fenToDivs(placement)}</wc-chess-board>
 console.log('PASS 18: mate, stalemate and the quiet draws all land -', ENDINGS.length, 'endings');
 
 
+// 19. the surface this was actually failing on: a finished game you came BACK
+// to. No result modal - it was dismissed long ago - only the classes Chess.com
+// leaves on such a page, and the viewed ply in the query string. The trigger has
+// to appear, dock to the move-list column rather than float, and start from the
+// ply the URL names.
+const REVISIT = `<!doctype html><html><body style="margin:0">
+<div class="player-row-component player-row-top"><span class="cc-user-rating-white">(1450)</span></div>
+<div class="board-layout-sidebar" style="position:absolute;right:0;top:0;width:300px;height:520px;background:#262421">
+  <div class="game-tab-scrollable"><div class="move-list">
+    <div class="node white-move main-line-ply">e4</div>
+    <div class="node black-move main-line-ply">e5</div>
+    <div class="node white-move main-line-ply">Nf3</div>
+    <div class="node black-move main-line-ply">Nc6</div>
+  </div></div>
+  <div class="game-result"><span class="result-row">1-0</span></div>
+  <div class="game-review-buttons-component"><button>Game Review</button></div>
+</div>
+<wc-chess-board id="board" style="position:relative;display:block;width:480px;height:480px;background:#eee">
+${fenToDivs('rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR')}</wc-chess-board>
+</body></html>`;
+await page.route('https://www.chess.com/game/live/revisit**', route =>
+  route.fulfill({ status: 200, contentType: 'text/html', body: REVISIT }));
+await page.goto('https://www.chess.com/game/live/revisit?username=x&move=1', { waitUntil: 'domcontentloaded' });
+await page.locator('#sfctplay-btn').waitFor({ timeout: 10000 }).catch(() => fail(
+  'no trigger on a finished game with no modal - the exact case a real page was failing on'));
+if (await page.locator('#sfctplay-dock').count() !== 1)
+  fail('the trigger floated instead of docking to the move-list column');
+const dockBox = await page.locator('#sfctplay-dock').boundingBox();
+const colBox = await page.locator('.board-layout-sidebar').boundingBox();
+if (Math.abs(dockBox.x - colBox.x) > 2 || Math.abs(dockBox.width - colBox.width) > 2)
+  fail(`dock is not flush with the column: dock=${JSON.stringify(dockBox)} col=${JSON.stringify(colBox)}`);
+console.log('PASS 19: trigger docked to the move-list column, no modal needed');
+
+await page.locator('#sfctplay-btn').click();
+// ?move=1 is White's first move, so Black is up: the engine plays before you do.
+await page.waitForFunction(() => /Your move/.test(document.getElementById('sfct-badge')?.textContent || ''),
+  null, { timeout: 60000 }).catch(() => fail('engine never moved first from the ply named in the URL'));
+const movedBlack = (await page.$$eval('#board [data-sfct="piece"]', els => els
+  .map(el => (el.className.match(/\bb[kqrbnp]\b/) || [])[0] + '@' + (el.className.match(/square-\d(\d)/) || [])[1])
+  .filter(s => !s.startsWith('undefined'))))
+  .filter(s => +s.split('@')[1] < 7);
+if (!movedBlack.length) fail('no black piece left its home ranks: ?move= was not read');
+console.log('PASS 19b: started from the ply in the URL - Black moved first');
+await page.locator('#sfct-badge').click();
+await page.waitForTimeout(300);
+
+// 20. and the same page WITHOUT a result: a game still being played. The trigger
+// must be impossible here, whatever else is on the page.
+const IN_PLAY = REVISIT
+  .replace(/<div class="game-result">[\s\S]*?<\/div>\s*/, '')
+  .replace(/<div class="game-review-buttons-component">[\s\S]*?<\/div>\s*/, '')
+  .replace('board-layout-sidebar', 'board-layout-sidebar sidebar-controller-component');
+await page.route('https://www.chess.com/game/live/inplay**', route =>
+  route.fulfill({ status: 200, contentType: 'text/html', body: IN_PLAY }));
+await page.goto('https://www.chess.com/game/live/inplay?move=3', { waitUntil: 'domcontentloaded' });
+await page.waitForTimeout(1500); // several poll ticks
+if (await page.locator('#sfctplay-btn').count() !== 0)
+  fail('the trigger appeared on a game that is still being played');
+console.log('PASS 20: no trigger on a game in progress, even while walking its move list');
+
+
 console.log('\nALL CHECKS PASSED');
 if (logs.length) console.log('--- page logs ---\n' + logs.join('\n'));
 await ctx.close();
