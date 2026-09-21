@@ -17,6 +17,23 @@ describe('manifests', () => {
     expect(firefox.version).toBe(pkg.version);
   });
 
+  // Continuing from any position in the move list reads the page harder than
+  // before, and the temptation is to reach for a permission to do it. It needs
+  // none: everything comes from the DOM the content script is already in.
+  it.each([['chrome', chrome], ['firefox', firefox]])(
+    'ask for nothing beyond storage, on nothing beyond the two game paths (%s)',
+    (_name, m) => {
+      expect(m.permissions).toEqual(['storage']);
+      expect(m.host_permissions).toBeUndefined();
+      expect(m.optional_permissions).toBeUndefined();
+      expect(m.optional_host_permissions).toBeUndefined();
+      expect(m.content_scripts.flatMap(c => c.matches).sort())
+        .toEqual(['*://*.chess.com/game/*', '*://*.chess.com/play/*']);
+      expect(m.content_security_policy.extension_pages)
+        .toBe("script-src 'self' 'wasm-unsafe-eval'; object-src 'self'");
+    },
+  );
+
   it.each([['chrome', chrome], ['firefox', firefox]])(
     'expose every engine file the content script asks for (%s)',
     (_name, m) => {
