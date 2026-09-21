@@ -493,3 +493,32 @@ describe('board selection and our own pieces', () => {
     expect(d.buildFENFromPieces(b)).not.toContain('Q');
   });
 });
+
+// ── sidebarPanel ─────────────────────────────────────────────────────────────
+// With no game-over modal to dock under - a finished game you came back to,
+// which is when you actually sit and walk the move list - the trigger anchors
+// to the column the move list lives in.
+describe('sidebarPanel', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+
+  it('walks out of the move list to the column around it', () => {
+    document.body.innerHTML =
+      '<div class="board-layout-sidebar"><div class="inner">' +
+      '<div class="move-list-wrapper"><div class="node white-move">e4</div></div>' +
+      '</div></div>';
+    expect(d.sidebarPanel()?.className).toBe('board-layout-sidebar');
+  });
+  it('matches a renamed column on the durable side/rail shape', () => {
+    document.body.innerHTML =
+      '<div class="game-sidebar-component"><div class="movelist">x</div></div>';
+    expect(d.sidebarPanel()?.className).toBe('game-sidebar-component');
+  });
+  it('falls back to the move list when no column is recognisable', () => {
+    document.body.innerHTML = '<div class="wrap"><div class="move-list">x</div></div>';
+    expect(d.sidebarPanel()?.className).toBe('move-list');
+  });
+  it('null when the page has no move list at all', () => {
+    document.body.innerHTML = '<div class="board-layout-sidebar"></div>';
+    expect(d.sidebarPanel()).toBeNull();
+  });
+});

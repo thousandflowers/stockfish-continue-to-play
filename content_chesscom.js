@@ -930,6 +930,16 @@ function makeNativeButton(template) {
     display: 'inline-flex', justifyContent: 'center', alignItems: 'center',
     minHeight: '48px', cursor: 'pointer', marginTop: '8px',
   });
+  // No modal means no Chess.com button to borrow the look from, and the label
+  // would land as bare text on the dock. Paint it in their green instead.
+  if (!template?.className) {
+    Object.assign(btn.style, {
+      width: '100%', border: 'none', borderRadius: '8px', background: '#81b64c',
+      color: '#fff', fontSize: '15px', fontWeight: '700',
+      boxShadow: 'inset 0 -3px 0 rgba(0,0,0,.18)',
+      fontFamily: '-apple-system,BlinkMacSystemFont,sans-serif',
+    });
+  }
   btn.onclick = onContinueClick;
   return btn;
 }
@@ -956,32 +966,37 @@ function injectFloatingButton() {
 function injectButtons() {
   if (document.getElementById('sfctplay-btn')) return;
 
+  // Chess.com's result card when it is on screen, otherwise the column holding
+  // the move list. Coming back to a finished game later — which is when you
+  // actually sit and walk the moves — there is no modal to dock under, and a
+  // button floating over the board reads as something stuck to the window
+  // rather than something belonging to the game.
   const modal = findGameOverModal();
-  if (!modal) { injectFloatingButton(); return; }
+  const anchor = modal || sidebarPanel();
+  if (!anchor) { injectFloatingButton(); return; }
 
-  // Line the trigger up under Chess.com's own buttons but keep the node in
-  // <body>: their modal is Vue-rendered, and inserting into it made Vue throw
+  // Line the trigger up under the anchor but keep the node in <body>: Chess.com
+  // renders both surfaces with Vue, and inserting into them made Vue throw
   // "insertBefore … not a child of this node" on its next patch.
-  const anchor = modalButtonAnchor(modal);
-  const btn = makeNativeButton(anchor);
+  const btn = makeNativeButton(modal ? modalButtonAnchor(modal) : null);
   btn.style.width = '100%';
 
-  // A strip that continues Chess.com's card: same width, same background,
-  // rounded off at the bottom, sitting flush against it. The nodes stay in
-  // <body> — their modal is Vue-rendered, and inserting into it made Vue throw
-  // "insertBefore … not a child of this node" on its next patch.
+  // A strip that continues the surface above it: same width, same background,
+  // rounded off at the bottom, sitting flush against it, so the two read as one
+  // panel instead of as a button someone dropped on the page.
   const dock = document.createElement('div');
   dock.id = 'sfctplay-dock';
+  dock.dataset.anchor = modal ? 'modal' : 'panel';
   Object.assign(dock.style, {
     position: 'fixed', zIndex: '999997', boxSizing: 'border-box',
     padding: '0 20px 16px', borderRadius: '0 0 12px 12px',
-    background: solidBackground(modal),
+    background: solidBackground(anchor),
     boxShadow: '0 12px 32px rgba(0,0,0,.45)',
   });
   dock.appendChild(btn);
   document.body.appendChild(dock);
-  alignTrigger(btn);
-  log('button injected (docked under the modal)');
+  alignTrigger();
+  log('button injected (docked under the ' + dock.dataset.anchor + ')');
 }
 
 // A reloaded/updated extension orphans this content script: every chrome.* call
@@ -990,15 +1005,24 @@ function extensionAlive() {
   try { return !!chrome.runtime?.id; } catch (_) { return false; }
 }
 
-// Keep the dock flush with the bottom of Chess.com's card, at its exact width,
-// so the two read as one panel.
+// Keep the dock flush with the bottom of whatever it was anchored to — the
+// result card or the move-list column — at that anchor's exact width, so the
+// two keep reading as one panel through scrolls and resizes.
 function alignTrigger() {
   const dock = document.getElementById('sfctplay-dock');
-  const modal = findGameOverModal();
   if (!dock) return;
-  if (!modal) { removeTrigger(); return; }
-  const r = modal.getBoundingClientRect();
+  const anchor = dock.dataset.anchor === 'panel' ? sidebarPanel() : findGameOverModal();
+  if (!anchor) { removeTrigger(); return; }
+  const r = anchor.getBoundingClientRect();
   if (!r.width) return;
+  // A column taller than the window would put the dock off the bottom of the
+  // screen, where nobody can reach it. Hand over to the floating button, which
+  // is anchored to nothing and so always visible.
+  if (dock.dataset.anchor === 'panel' && r.bottom > window.innerHeight - 48) {
+    removeTrigger();
+    injectFloatingButton();
+    return;
+  }
   dock.style.left = r.left + 'px';
   dock.style.top = (r.bottom - 1) + 'px';
   dock.style.width = r.width + 'px';
@@ -1015,7 +1039,6 @@ function solidBackground(el) {
 }
 
 function removeTrigger() {
-  document.getElementById('sfct-ask')?.remove();
   document.getElementById('sfctplay-btn')?.remove();
   document.getElementById('sfctplay-dock')?.remove();
 }
