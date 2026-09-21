@@ -60,10 +60,17 @@ describe('buildFENFromPieces', () => {
   it('null with no pieces', () => {
     expect(d.buildFENFromPieces(document.createElement('div'))).toBeNull();
   });
-  it('null below the 3-piece noise guard', () => {
+  it('null when a king is missing - that is what noise looks like', () => {
     const root = document.createElement('div');
-    root.append(piece('piece wk square-11'), piece('piece bk square-88'));
+    root.append(piece('piece wp square-11'), piece('piece bp square-88'), piece('piece wr square-44'));
     expect(d.buildFENFromPieces(root)).toBeNull();
+  });
+  it('two bare kings ARE a position, and a drawn one', () => {
+    // The old count-based guard rejected this, so continuing from a bare-kings
+    // ending said "Position not found" instead of "Already a draw".
+    const root = document.createElement('div');
+    root.append(piece('piece wk square-51'), piece('piece bk square-58'));
+    expect(d.buildFENFromPieces(root)).toBe('4k3/8/8/8/8/8/8/4K3');
   });
   it('parses the start position', () => {
     const root = document.createElement('div');
