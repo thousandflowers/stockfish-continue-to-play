@@ -294,3 +294,86 @@ describe('computeSquareFromClick', () => {
   it('top-left is h1 (flipped)', () => { expect(d.computeSquareFromClick(board(true), 50, 50)).toBe('h1'); });
   it('null outside the board', () => { expect(d.computeSquareFromClick(board(false), 900, 50)).toBeNull(); });
 });
+
+// ── readSideToMove ───────────────────────────────────────────────────────────
+// Navigating the move list after a game is the whole point of "continue from
+// the position on the board", so the side to move has to follow the SELECTED
+// ply, not the last one played.
+describe('readSideToMove', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+
+  // `sel` is the index of the ply Chess.com is showing, -1 for none marked.
+  const movelist = (plies, sel = -1) => {
+    document.body.innerHTML = '<div class="analysis-view-movelist move-list">' +
+      plies.map((san, i) => `<div class="node ${i % 2 ? 'black' : 'white'}-move main-line-ply` +
+        `${i === sel ? ' selected' : ''}">${san}</div>`).join('') +
+      '</div>';
+  };
+  const highlight = (from, to, pieceClass) => {
+    const b = document.createElement('wc-chess-board');
+    b.innerHTML = `<div class="highlight square-${from}"></div><div class="highlight square-${to}"></div>` +
+                  `<div class="piece ${pieceClass} square-${to}"></div>`;
+    document.body.appendChild(b);
+  };
+
+  it('black is up when the selected ply is White’s', () => {
+    movelist(['e4', 'e5', 'Nf3', 'Nc6', 'Bb5'], 2); // 3rd ply, White played Nf3
+    expect(d.readSideToMove()).toBe('b');
+  });
+  it('white is up when the selected ply is Black’s', () => {
+    movelist(['e4', 'e5', 'Nf3', 'Nc6', 'Bb5'], 3); // 4th ply, Black played Nc6
+    expect(d.readSideToMove()).toBe('w');
+  });
+  it('the selected ply wins over the last one played', () => {
+    movelist(['e4', 'e5', 'Nf3', 'Nc6'], 0); // scrubbed back to right after 1. e4
+    expect(d.readSideToMove()).toBe('b');
+  });
+  it('reads a selection marked with aria-selected', () => {
+    movelist(['e4', 'e5', 'Nf3']);
+    document.querySelectorAll('.node')[1].setAttribute('aria-selected', 'true');
+    expect(d.readSideToMove()).toBe('w');
+  });
+  it('index parity decides when the colour classes are gone', () => {
+    document.body.innerHTML = '<div class="move-list">' +
+      ['e4', 'e5', 'Nf3'].map((s, i) => `<div class="main-line-ply${i === 1 ? ' selected' : ''}">${s}</div>`).join('') +
+      '</div>';
+    expect(d.readSideToMove()).toBe('w'); // ply 2 was Black's
+  });
+  it('the board breaks a tie between index and colour class', () => {
+    document.body.innerHTML = '<div class="move-list">' +
+      '<div class="node white-move main-line-ply">e4</div>' +
+      '<div class="node white-move main-line-ply selected">e5</div>' + // mislabelled
+      '</div>';
+    highlight('57', '55', 'bp'); // a black pawn landed on e5, so White is up
+    expect(d.readSideToMove()).toBe('w');
+  });
+  it('null when index and colour class disagree and the board is silent', () => {
+    document.body.innerHTML = '<div class="move-list">' +
+      '<div class="node white-move main-line-ply">e4</div>' +
+      '<div class="node white-move main-line-ply selected">e5</div>' +
+      '</div>';
+    expect(d.readSideToMove()).toBeNull();
+  });
+  it('with nothing marked the board wins over the end of the list', () => {
+    movelist(['e4', 'e5', 'Nf3', 'Nc6']); // list says White is up
+    highlight('52', '54', 'wp');          // board shows a white pawn just landed
+    expect(d.readSideToMove()).toBe('b');
+  });
+  it('falls back to the end of the list when nothing else is readable', () => {
+    movelist(['e4', 'e5', 'Nf3']);
+    expect(d.readSideToMove()).toBe('b');
+  });
+  it('null on a page with no move list and no board', () => {
+    expect(d.readSideToMove()).toBeNull();
+  });
+  it('getTurnFromMoveList still defaults to white on an empty page', () => {
+    expect(d.getTurnFromMoveList()).toBe('w');
+  });
+  it('ignores our own overlay pieces when reading the highlight', () => {
+    const b = document.createElement('wc-chess-board');
+    b.innerHTML = '<div class="highlight square-52"></div><div class="highlight square-54"></div>' +
+                  '<div class="piece wp square-54" data-sfct="piece"></div>';
+    document.body.appendChild(b);
+    expect(d.readSideToMove()).toBeNull();
+  });
+});
