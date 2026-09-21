@@ -4,6 +4,51 @@ All notable changes to this project are documented here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html), and each entry links
 to the release its zips were published under.
 
+## [3.3.0] - 2026-09-21
+
+### Added
+
+- **Continue from the position you are looking at, not only the one the game
+  ended on.** Walk back through the move list to the move where it went wrong
+  and press Continue from there: lose to a mate, rewind three moves, play it
+  differently. Still only ever after a game has ended - the trigger is gated on
+  the same game-over check as before, which has been tightened rather than
+  duplicated.
+- **A "who is to move?" prompt** for the rare position whose side to move cannot
+  be established. Starting the wrong side is only visible once the engine moves
+  a piece it should not have been able to touch, so it asks instead of guessing.
+
+### Changed
+
+- **The side to move follows the selected ply.** The piece placement always came
+  from the board, which Chess.com re-renders as you navigate; only the turn was
+  still read off the end of the move list, so an earlier position came out with
+  the right pieces and the wrong player up. Three independent readings now agree
+  on it: the index of the selected ply, its colour class, and the board's
+  last-move highlight.
+- **The trigger docks under the move-list column when there is no game-over
+  card**, instead of falling through to a button floating over the window. A
+  finished game you came back to is exactly where the move list gets walked, and
+  there is no card there to hang off.
+
+### Fixed
+
+- **Captures en passant are possible again.** The scraped FEN carried a hardcoded
+  "-" in the en-passant field, so Stockfish never generated the capture and the
+  move came back refused. The two squares Chess.com highlights for the last move
+  give the target exactly. It stays "-" if you have switched Chess.com's move
+  highlighting off.
+- **A hidden game-over surface no longer counts as a finished game.** The check
+  asked only whether a matching node existed, so one left mounted after a
+  rematch could put the trigger up over a live board.
+- **The position is read off the board the game is played on.** It was taken
+  from the first board in the document while play happened on the largest
+  visible one - a difference only a page with two boards can show, and a review
+  page is such a page.
+- **A position that is already checkmate or stalemate says so**, rather than
+  announcing the result of a game that never started, and does not offer to play
+  it again.
+
 ## [3.2.1] - 2026-09-04
 
 ### Changed
@@ -111,6 +156,8 @@ on Lichess to play out, which 3.1.0 replaced entirely. Releases in this line dea
 with the Lichess handoff: posting the position directly, `variant=FromPosition` for
 custom positions, and CSRF tokens on the request.
 
+[3.3.0]: https://github.com/thousandflowers/stockfish-continue-to-play/releases/tag/v3.3.0
+[3.2.1]: https://github.com/thousandflowers/stockfish-continue-to-play/releases/tag/v3.2.1
 [3.2.0]: https://github.com/thousandflowers/stockfish-continue-to-play/releases/tag/v3.2.0
 [3.1.2]: https://github.com/thousandflowers/stockfish-continue-to-play/releases/tag/v3.1.2
 [3.1.1]: https://github.com/thousandflowers/stockfish-continue-to-play/releases/tag/v3.1.1
