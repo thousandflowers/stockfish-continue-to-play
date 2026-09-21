@@ -8,7 +8,9 @@
       "id": "stockfish-continue@thousandflowers",
       "strict_min_version": "128.0",
       "data_collection_permissions": {
-        "required": ["none"]
+        "required": [
+          "none"
+        ]
       }
     }
   },
@@ -16,7 +18,9 @@
     "storage"
   ],
   "background": {
-    "scripts": ["service-worker.js"]
+    "scripts": [
+      "service-worker.js"
+    ]
   },
   "action": {
     "default_popup": "popup.html",
@@ -39,14 +43,34 @@
         "*://*.chess.com/game/*",
         "*://*.chess.com/play/*"
       ],
-      "js": ["lib/chess-core.js", "lib/chess-dom.js", "content_chesscom.js"],
+      "js": [
+        "lib/chess-core.js",
+        "lib/chess-dom.js",
+        "content_chesscom.js"
+      ],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "*://*.chess.com/game/*",
+        "*://*.chess.com/play/*"
+      ],
+      "js": [
+        "page-bridge.js"
+      ],
+      "world": "MAIN",
       "run_at": "document_end"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["stockfish.js", "stockfish.wasm"],
-      "matches": ["*://*.chess.com/*"]
+      "resources": [
+        "stockfish.js",
+        "stockfish.wasm"
+      ],
+      "matches": [
+        "*://*.chess.com/*"
+      ]
     }
   ],
   "content_security_policy": {

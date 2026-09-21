@@ -41,6 +41,32 @@ let lastPage = pageKey();
 // chesscomState = { startFen, moves[], boardData, selectedSq, playerSide,
 //                   engineSide, sideToMove, board, _ptrCleanup, _refreshTimer }
 let chesscomState = null;
+
+// ── What the page world can see ────────────────────────────────────────
+// page-bridge.js runs inside Chess.com's own JavaScript world — the only place
+// their board component is reachable — and publishes what it says about the
+// position. null when it is not there: an older Chess.com, or a browser where
+// world:"MAIN" did not take. Everything here falls back to scraping in that
+// case, which is exactly what shipped before, so the bridge can only add.
+let pageState = null;
+
+window.addEventListener('message', (e) => {
+  if (e.source !== window) return;
+  const d = e.data;
+  if (!d || d.__sfct !== 'page-state') return;
+  pageState = d.state || null;
+});
+
+// Their board says which colour you are playing. The shape is not documented,
+// so only values we actually recognise are honoured — a wrong colour hands you
+// your opponent's pieces, which is the worst failure this extension has.
+function bridgePlayerColor() {
+  const v = pageState?.playingAs;
+  if (v === 'white' || v === 'black') return v;
+  if (v === 1) return 'white';
+  if (v === 2) return 'black';
+  return null;
+}
 let _perftMoves = null;   // null = idle, [] = collecting `go perft 1` output
 let _legalMoves = null;   // UCI legal moves for the side to move, or null
 let _mateSide = null;     // the side with no moves, while working out mate vs stalemate
@@ -1021,6 +1047,13 @@ function onContinueClick(e) {
     // The same board the game will be played on, not just the first one in the
     // document — a review page can carry more than one.
     const board = findActiveBoard();
+    // Chess.com's own answer when we can reach it: one call in place of
+    // scraping the piece divs, estimating castling rights from home squares,
+    // deducing en passant from the last-move highlight and parsing the ply out
+    // of the query string. Their FEN carries all of it, correctly, by
+    // construction — and it is the position being SHOWN, which is the whole
+    // point of this feature.
+    if (pageState?.fen) { startContinuation(board, null, strength, pageState.fen); return; }
     const side = readSideToMove(board);
     if (side) { startContinuation(board, side, strength); return; }
     // Re-check the gate when the question is ANSWERED, not only when it was
@@ -1035,11 +1068,11 @@ function onContinueClick(e) {
 
 // Capture the position on the board — whichever move in the list you are
 // looking at — and hand it to the engine.
-function startContinuation(board, side, strength) {
-  const fen = getFEN(board, side);
+function startContinuation(board, side, strength, fenFromPage) {
+  const fen = fenFromPage || getFEN(board, side);
   if (!fen) { showBanner('Position not found.'); return; }
   removeTrigger(); // the trigger goes away while you play
-  showChesscomBoard(fen, getPlayerColor(), strength);
+  showChesscomBoard(fen, bridgePlayerColor() || getPlayerColor(), strength);
 }
 
 // Build a button that mimics a Chess.com modal button when given a template.

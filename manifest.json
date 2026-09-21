@@ -30,14 +30,34 @@
         "*://*.chess.com/game/*",
         "*://*.chess.com/play/*"
       ],
-      "js": ["lib/chess-core.js", "lib/chess-dom.js", "content_chesscom.js"],
+      "js": [
+        "lib/chess-core.js",
+        "lib/chess-dom.js",
+        "content_chesscom.js"
+      ],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "*://*.chess.com/game/*",
+        "*://*.chess.com/play/*"
+      ],
+      "js": [
+        "page-bridge.js"
+      ],
+      "world": "MAIN",
       "run_at": "document_end"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["stockfish.js", "stockfish.wasm"],
-      "matches": ["*://*.chess.com/*"]
+      "resources": [
+        "stockfish.js",
+        "stockfish.wasm"
+      ],
+      "matches": [
+        "*://*.chess.com/*"
+      ]
     }
   ],
   "content_security_policy": {

@@ -27,10 +27,33 @@ describe('manifests', () => {
       expect(m.host_permissions).toBeUndefined();
       expect(m.optional_permissions).toBeUndefined();
       expect(m.optional_host_permissions).toBeUndefined();
-      expect(m.content_scripts.flatMap(c => c.matches).sort())
+      // Unique hosts, not entries: a second script on the SAME two paths adds
+      // no reach, and the page-world bridge is one.
+      expect([...new Set(m.content_scripts.flatMap(c => c.matches))].sort())
         .toEqual(['*://*.chess.com/game/*', '*://*.chess.com/play/*']);
       expect(m.content_security_policy.extension_pages)
         .toBe("script-src 'self' 'wasm-unsafe-eval'; object-src 'self'");
+    },
+  );
+
+  // The page-world script is the only thing here that can see Chess.com's own
+  // JavaScript, so what it is and what it may do is worth stating outright.
+  it.each([['chrome', chrome], ['firefox', firefox]])(
+    'run exactly one script in the page world, and it only reads (%s)',
+    (_name, m) => {
+      const main = m.content_scripts.filter(c => c.world === 'MAIN');
+      expect(main).toHaveLength(1);
+      expect(main[0].js).toEqual(['page-bridge.js']);
+      // Comments stripped: the file NAMES the calls it refuses to make, and
+      // saying so is the opposite of doing it.
+      const code = readFileSync(path.join(root, 'page-bridge.js'), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
+      // Nothing that changes a game, and nothing that holds a permission.
+      for (const forbidden of ['.move(', 'setMode', 'resign', 'agreeDraw', 'chrome.']) {
+        expect(code).not.toContain(forbidden);
+      }
+      expect(m.content_scripts.filter(c => c.world !== 'MAIN')).toHaveLength(1);
     },
   );
 

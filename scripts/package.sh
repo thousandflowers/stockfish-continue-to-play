@@ -17,6 +17,7 @@ bash scripts/download-stockfish.sh >/dev/null   # re-verifies the pinned checksu
 PAYLOAD=(
   service-worker.js
   content_chesscom.js
+  page-bridge.js
   popup.html
   popup.js
   lib
