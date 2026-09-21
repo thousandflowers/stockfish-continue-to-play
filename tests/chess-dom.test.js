@@ -377,3 +377,59 @@ describe('readSideToMove', () => {
     expect(d.readSideToMove()).toBeNull();
   });
 });
+
+// ── enPassantTarget ──────────────────────────────────────────────────────────
+// The only legal move a scraped position can lose. Castling can only ever be
+// over-granted by the home-square heuristic, promotion does not depend on the
+// start FEN at all, and the two counters cannot make anything illegal — but a
+// capture en passant is simply absent from the engine's move list when the FEN
+// says "-", and the refusal reads as a bug.
+describe('enPassantTarget', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  const withHighlights = (...squares) => {
+    const b = document.createElement('wc-chess-board');
+    b.innerHTML = squares.map(s => `<div class="highlight square-${s}"></div>`).join('');
+    document.body.appendChild(b);
+    return b;
+  };
+
+  it('d7-d5 leaves d6 capturable', () => {
+    withHighlights('47', '45');
+    expect(d.enPassantTarget('8/8/8/3p4/8/8/8/8')).toBe('d6');
+  });
+  it('e2-e4 leaves e3 capturable', () => {
+    withHighlights('52', '54');
+    expect(d.enPassantTarget('8/8/8/8/4P3/8/8/8')).toBe('e3');
+  });
+  it('a single push is not a double push', () => {
+    withHighlights('46', '45');
+    expect(d.enPassantTarget('8/8/8/3p4/8/8/8/8')).toBe('-');
+  });
+  it('a knight hop is not a double push', () => {
+    withHighlights('71', '63');
+    expect(d.enPassantTarget('8/8/8/8/8/5N2/8/8')).toBe('-');
+  });
+  it('two squares apart but no pawn landed there', () => {
+    withHighlights('41', '43');
+    expect(d.enPassantTarget('8/8/8/8/8/3R4/8/8')).toBe('-');
+  });
+  it('a pawn on the wrong rank is not a double push', () => {
+    withHighlights('44', '46');
+    expect(d.enPassantTarget('8/8/3p4/8/8/8/8/8')).toBe('-');
+  });
+  it('dash when the board is not highlighting at all', () => {
+    withHighlights();
+    expect(d.enPassantTarget('8/8/8/3p4/8/8/8/8')).toBe('-');
+  });
+  it('dash when there is no board', () => {
+    expect(d.enPassantTarget('8/8/8/3p4/8/8/8/8')).toBe('-');
+  });
+  it('getFEN puts the target in the fourth field', () => {
+    const b = document.createElement('wc-chess-board');
+    b.innerHTML = '<div class="highlight square-47"></div><div class="highlight square-45"></div>' +
+                  '<div class="piece bp square-45"></div><div class="piece wp square-54"></div>' +
+                  '<div class="piece wk square-51"></div><div class="piece bk square-58"></div>';
+    document.body.appendChild(b);
+    expect(d.getFEN().split(' ')[3]).toBe('d6');
+  });
+});
