@@ -37,6 +37,8 @@ const HTML = `<!doctype html><html><body style="margin:0">
 <div class="board-player-component"><span class="user-tagline-rating">1450</span></div>
 <div class="board-player-component"><span class="user-tagline-you">You</span><span class="user-tagline-rating">1400</span></div>
 <wc-chess-board id="board" style="position:relative;display:block;width:480px;height:480px;background:#eee">${pieces}</wc-chess-board>
+<div class="move-list"><div class="node white-move main-line-ply">d4</div>
+<div class="node black-move main-line-ply">d5</div></div>
 <div class="game-over-modal-content"><div class="game-over-buttons-buttons">
   <button data-cy="game-over-modal-rematch-button">Rematch</button>
 </div></div>
@@ -321,6 +323,71 @@ await page.waitForTimeout(1200);
 const promoted = await pieceAt('18');
 if (!/\bwn\b/.test(promoted || '')) fail('promoted to the wrong piece: ' + promoted);
 console.log('PASS 15: promotion picker offered q,n,r,b and a knight landed on a8');
+
+// 16. continue from the position you are LOOKING at, not the one the game ended
+// on. The move list marks ply 1 as selected, so it is Black to move even though
+// the list runs to ply 4 and would have said White. Nothing here touches the
+// board: if the engine moves a black piece on its own, the selection was read.
+const SCRUB_HTML = `<!doctype html><html><body style="margin:0">
+<div class="player-row-component player-row-top"><span class="cc-user-rating-white">(1450)</span></div>
+<div class="board-layout-sidebar"><div class="move-list">
+<div class="node white-move main-line-ply selected">e4</div>
+<div class="node black-move main-line-ply">e5</div>
+<div class="node white-move main-line-ply">Nf3</div>
+<div class="node black-move main-line-ply">Nc6</div></div></div>
+<wc-chess-board id="board" style="position:relative;display:block;width:480px;height:480px;background:#eee">
+${fenToDivs('rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR')}</wc-chess-board>
+<div class="game-over-modal-shell-container"><div class="game-over-modal-shell-buttons">
+<button aria-label="New Game">New Game</button></div></div>
+</body></html>`;
+await page.route('https://www.chess.com/game/live/scrub', route =>
+  route.fulfill({ status: 200, contentType: 'text/html', body: SCRUB_HTML }));
+await page.goto('https://www.chess.com/game/live/scrub', { waitUntil: 'domcontentloaded' });
+await page.locator('#sfctplay-btn').waitFor({ timeout: 10000 }).catch(() => fail('no button on the scrubbed page'));
+
+const blackSquares = () => page.$$eval('#board [data-sfct="piece"]', els =>
+  els.map(el => (el.className.match(/\bb[kqrbnp]\b/) || [])[0] + '@' +
+                (el.className.match(/square-\d\d/) || [])[0]).filter(s => !s.startsWith('undefined')).sort());
+
+await page.locator('#sfctplay-btn').click();
+// "Your move" only arrives once the engine has played, and the engine only plays
+// first when the selected ply says it is its turn.
+await page.waitForFunction(() => /Your move/.test(document.getElementById('sfct-badge')?.textContent || ''),
+  null, { timeout: 60000 }).catch(async () => fail(
+  'engine never moved first from the selected ply; badge=' +
+  (await page.locator('#sfct-badge').textContent().catch(() => '(none)'))));
+const blackNow = await blackSquares();
+// The scraped placement had every black piece at home. If one has moved, Black
+// was to move - which only the SELECTED ply says.
+if (blackNow.includes('bp@square-57') && blackNow.includes('bn@square-78')) {
+  fail('no black piece moved: the side to move came from the end of the list, not the selection');
+}
+console.log('PASS 16: started from the selected ply - Black moved first, as that position says');
+await page.locator('#sfct-badge').click();
+await page.waitForTimeout(300);
+
+// 17. when nothing on the page says whose turn it is, ask rather than guess.
+// No move list, no last-move highlight: the old code silently assumed White.
+const ASK_HTML = `<!doctype html><html><body style="margin:0">
+<div class="player-row-component player-row-top"><span class="cc-user-rating-white">(1450)</span></div>
+<wc-chess-board id="board" style="position:relative;display:block;width:480px;height:480px;background:#eee">
+${fenToDivs('4k3/8/8/8/8/8/4P3/4K3')}</wc-chess-board>
+<div class="game-over-modal-shell-container"><div class="game-over-modal-shell-buttons">
+<button aria-label="New Game">New Game</button></div></div>
+</body></html>`;
+await page.route('https://www.chess.com/game/live/ask', route =>
+  route.fulfill({ status: 200, contentType: 'text/html', body: ASK_HTML }));
+await page.goto('https://www.chess.com/game/live/ask', { waitUntil: 'domcontentloaded' });
+await page.locator('#sfctplay-btn').waitFor({ timeout: 10000 }).catch(() => fail('no button on the unreadable page'));
+await page.locator('#sfctplay-btn').click();
+await page.locator('#sfct-ask').waitFor({ timeout: 10000 })
+  .catch(() => fail('no side-to-move prompt on a page that cannot say whose turn it is'));
+if (await page.locator('#sfct-badge').count() !== 0) fail('the game started before the question was answered');
+await page.getByRole('button', { name: /White/ }).click();
+await page.waitForSelector('#sfct-badge', { timeout: 10000 })
+  .catch(() => fail('answering the prompt did not start the game'));
+console.log('PASS 17: asked whose move it was, and started once answered');
+
 
 console.log('\nALL CHECKS PASSED');
 if (logs.length) console.log('--- page logs ---\n' + logs.join('\n'));
