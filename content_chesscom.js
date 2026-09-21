@@ -270,18 +270,22 @@ function injectBoardStyle() {
     // stop hands the board straight back instead of leaving it blank.
     'wc-chess-board [class*="piece"]:not([data-sfct]),chess-board [class*="piece"]:not([data-sfct]){display:none!important}',
     '[data-sfct="piece"]{transition:transform var(--move-animation-duration,180ms) ease-out}',
-    '.sfct-check{background:radial-gradient(ellipse at center,rgba(255,0,0,.9) 0%,rgba(231,0,0,.8) 25%,rgba(169,0,0,0) 89%)}',
-    '@keyframes _sfctshake{0%,100%{transform:var(--sfct-xy)}25%{transform:var(--sfct-xy) translateX(-6%)}75%{transform:var(--sfct-xy) translateX(6%)}}',
-    '.sfct-shake{animation:_sfctshake .32s ease-in-out}',
-    '.sfct-sel{box-shadow:inset 0 0 0 3px #ffd700,0 0 12px rgba(255,215,0,.5);border-radius:4px}',
-    // Painted as radial gradients rather than a fixed-size child so they scale
-    // with the board, and carrying a pale rim so they read on Chess.com's light
-    // AND dark squares — flat 18% black vanished on the dark ones.
-    '.sfct-dot{background:radial-gradient(circle,rgba(0,0,0,.45) 0 15%,rgba(255,255,255,.4) 15% 18.5%,transparent 19%)}',
-    // A capture destination has a piece on it, so a dot would be hidden behind
-    // the sprite. Ring the piece instead, the way Chess.com marks one.
-    '.sfct-ring{background:radial-gradient(circle,transparent 0 58%,rgba(255,255,255,.4) 58% 61%,' +
-      'rgba(0,0,0,.45) 61% 76%,rgba(255,255,255,.4) 76% 79%,transparent 80%)}',
+    // The king in check. Chess.com draws this with a VFX layer whose artwork we
+    // cannot borrow, but its motion is plain CSS and is copied here exactly:
+    // grow 50ms, wiggle 200ms five times, shrink 250ms on their easing. The red
+    // is their own radial glow. The scale/rotate live on an inner element so
+    // they cannot fight the translate that puts the marker on its square.
+    '[data-sfct="check"]{pointer-events:none}',
+    '.sfct-check-el{width:100%;height:100%;' +
+      'background:radial-gradient(ellipse at center,rgba(255,0,0,.9) 0%,rgba(231,0,0,.8) 25%,rgba(169,0,0,0) 89%);' +
+      'animation:_sfctgrow 50ms linear 0s 1 normal forwards,' +
+      '_sfctwiggle .2s linear 50ms 5 normal forwards,' +
+      '_sfctshrink .25s cubic-bezier(.16,1,.3,1) 1.05s 1 normal forwards}',
+    '@keyframes _sfctgrow{0%{transform:scale(1)}100%{transform:scale(1.1)}}',
+    '@keyframes _sfctwiggle{0%{transform:scale(1.1) rotate(0deg)}25%{transform:scale(1.1) rotate(-4deg)}' +
+      '50%{transform:scale(1.1) rotate(0deg)}75%{transform:scale(1.1) rotate(4deg)}' +
+      '100%{transform:scale(1.1) rotate(0deg)}}',
+    '@keyframes _sfctshrink{0%{transform:scale(1.1)}100%{transform:scale(1)}}',
   ].join('');
   document.head.appendChild(bs);
 }
@@ -438,6 +442,10 @@ function rematch() {
 // its node for the board's transition to animate it across.
 let _sfSyncing = false;
 
+// One board square, positioned by place(). Same values Chess.com gives its own
+// .highlight / .hint / .capture-hint, so the two never disagree.
+const SQUARE_BOX = 'position:absolute;top:0;left:0;width:12.5%;height:12.5%;';
+
 function makePieceNode(pc) {
   const el = document.createElement('div');
   el.setAttribute('data-sfct', 'piece');
@@ -493,7 +501,6 @@ function syncBoardToState() {
       board.appendChild(el);
       nodes.set(a.sq, el);
     }
-    nodes.forEach((el, sq) => el.classList.toggle('sfct-sel', sq === selectedSq));
 
     // A king in check gets the red square, and keeps it while the check stands.
     board.querySelectorAll(':scope > [data-sfct="check"]').forEach(el => el.remove());
@@ -501,22 +508,42 @@ function syncBoardToState() {
     if (checkedKing) {
       const mark = document.createElement('div');
       mark.setAttribute('data-sfct', 'check');
-      mark.className = 'sfct-check';
-      mark.style.cssText = 'position:absolute;top:0;left:0;width:12.5%;height:12.5%;z-index:3;pointer-events:none';
+      mark.style.cssText = 'position:absolute;top:0;left:0;width:12.5%;height:12.5%;z-index:3';
+      mark.appendChild(Object.assign(document.createElement('div'), { className: 'sfct-check-el' }));
       place(mark, checkedKing);
-      mark.style.setProperty('--sfct-xy', mark.style.transform);
       board.appendChild(mark);
     }
 
-    board.querySelectorAll(':scope > [data-sfct="dot"]').forEach(el => el.remove());
+    // The square you picked up from, and where it can go. All three wear
+    // Chess.com's own classes rather than anything drawn here, so they ARE
+    // Chess.com's markers - the same borrowing the pieces do with `.piece` for
+    // the sprite, and it follows their restyles for free:
+    //
+    //   .hint          12.5% square, border-radius 50%, 4.2% padding clipped to
+    //                  the content box - the small dot on an empty square
+    //   .capture-hint  the same square with a 5px ring - drawn AROUND the piece
+    //                  standing on it, which is why a dot was invisible there
+    //   .highlight     the square you have selected
+    //
+    // Geometry stays ours, paint is theirs. Their rules size these too, but
+    // leaning on that for LAYOUT means a rename silently stacks every marker
+    // at a1 instead of just leaving them unpainted — and the percentages in
+    // place() resolve against the element's own size, so it has to have one.
+    // The values are theirs, so nothing here fights their rule.
+    board.querySelectorAll(':scope > [data-sfct="sel"], :scope > [data-sfct="dot"]').forEach(el => el.remove());
+    if (selectedSq) {
+      const sel = document.createElement('div');
+      sel.setAttribute('data-sfct', 'sel');
+      sel.className = 'highlight';
+      sel.style.cssText = SQUARE_BOX + 'z-index:2';
+      place(sel, selectedSq);
+      board.appendChild(sel);
+    }
     for (const dest of dests || []) {
       const dot = document.createElement('div');
       dot.setAttribute('data-sfct', 'dot');
-      // z-index 6 puts the marker ABOVE the pieces (5). At 4 the ring — and the
-      // old dot — sat behind the sprite, so the captures were exactly the
-      // destinations you could not see.
-      dot.className = boardData[dest] ? 'sfct-ring' : 'sfct-dot';
-      dot.style.cssText = 'position:absolute;top:0;left:0;width:12.5%;height:12.5%;z-index:6;pointer-events:none';
+      dot.className = boardData[dest] ? 'capture-hint' : 'hint';
+      dot.style.cssText = SQUARE_BOX + 'z-index:6';
       place(dot, dest);
       board.appendChild(dot);
     }
@@ -594,11 +621,11 @@ function refuseMove() {
   const inCheck = st && isKingAttacked(st.boardData, st.sideToMove);
   updateStatus(inCheck ? 'You are in check' : 'Illegal move');
   if (!inCheck) return;
-  const mark = document.querySelector('[data-sfct="check"]');
-  if (!mark) return;
-  mark.classList.remove('sfct-shake');
-  void mark.offsetWidth; // restart the animation
-  mark.classList.add('sfct-shake');
+  const el = document.querySelector('[data-sfct="check"] .sfct-check-el');
+  if (!el) return;
+  el.style.animation = 'none';
+  void el.offsetWidth; // restart Chess.com's own grow/wiggle/shrink
+  el.style.animation = '';
 }
 
 // The four-piece column Chess.com pops over the promotion square. Queen first,

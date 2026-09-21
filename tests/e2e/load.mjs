@@ -239,15 +239,19 @@ const stillHidden = await page.$$eval('#board [class*="piece"]:not([data-sfct])'
 if (stillHidden !== 0) fail('Chess.com pieces came back while the result was still up');
 console.log('PASS 12: final position stays on the board —', frozen, 'pieces held');
 
-// 12b. the mated king wears Chess.com's red square
+// 12b. the mated king wears Chess.com's red square. The glow lives on an inner
+// element so their grow/wiggle/shrink animation cannot fight the transform that
+// puts the marker on its square, so that is where the paint is.
 const checkMark = await page.$$eval('#board [data-sfct="check"]', els => els.map(e => ({
-  cls: e.className,
-  bg: getComputedStyle(e).backgroundImage.slice(0, 24),
   sq: (e.className.match(/square-\d\d/) || [])[0],
+  inner: e.children.length,
+  bg: e.firstElementChild ? getComputedStyle(e.firstElementChild).backgroundImage.slice(0, 24) : '(no child)',
+  anim: e.firstElementChild ? getComputedStyle(e.firstElementChild).animationName : '(none)',
 })));
 if (checkMark.length !== 1) fail(`expected the checked king to be marked once, got ${checkMark.length}`);
 if (!/radial-gradient/.test(checkMark[0].bg)) fail('check mark is not painted: ' + checkMark[0].bg);
-console.log('PASS 12b: checked king marked red on', checkMark[0].sq);
+if (!/_sfctgrow/.test(checkMark[0].anim)) fail('check mark is not animated: ' + checkMark[0].anim);
+console.log('PASS 12b: checked king marked red on', checkMark[0].sq, '- animation', checkMark[0].anim);
 
 // 13. …and leaving hands the board back
 await page.getByRole('button', { name: 'Back to Chess.com' }).click();
@@ -301,13 +305,15 @@ await page.waitForFunction(() => /Your move/.test(document.getElementById('sfct-
 // for the pawn to actually take the selection before aiming at a8
 await page.waitForTimeout(600);
 await tap(1, 7);            // the a7 pawn
-await page.locator('#board [data-sfct="piece"].square-17.sfct-sel').waitFor({ timeout: 8000 })
+// The square you picked up from is marked with Chess.com's own `highlight`
+// class on a node of its own, not with a ring drawn onto the piece.
+await page.locator('#board [data-sfct="sel"].square-17.highlight').waitFor({ timeout: 8000 })
   .catch(() => fail('the a7 pawn never got selected'));
 await tap(1, 8);            // …to a8
 await page.locator('[data-sfct="promo"]').waitFor({ timeout: 5000 }).catch(async () => fail(
   'no promotion picker; ' + JSON.stringify(await page.evaluate(() => ({
     badge: document.getElementById('sfct-badge')?.textContent,
-    selected: [...document.querySelectorAll('#board .sfct-sel')].map(e => (e.className.match(/square-\d\d/) || [])[0]),
+    selected: [...document.querySelectorAll('#board [data-sfct="sel"]')].map(e => (e.className.match(/square-\d\d/) || [])[0]),
     a7: !!document.querySelector('#board [data-sfct="piece"].square-17'),
     a8: document.querySelector('#board [data-sfct="piece"].square-18')?.className || null,
     markers: [...document.querySelectorAll('[data-sfct]')].map(e => e.getAttribute('data-sfct')),
