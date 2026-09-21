@@ -37,7 +37,23 @@ to the release its zips were published under.
 - **The trigger docks under the move-list column when there is no game-over
   card**, instead of falling through to a button floating over the window. A
   finished game you came back to is exactly where the move list gets walked, and
-  there is no card there to hang off.
+  there is no card there to hang off. The column is asked to be that much
+  shorter - a padding on their element, never a node inserted into it - so the
+  row of icons at its foot moves up rather than disappearing under the bar, and
+  is handed back untouched when the trigger goes.
+- **The viewed ply is read from the URL.** Chess.com writes it into the query
+  string (`?move=20`) and rewrites it on every click in the move list. Probing a
+  real finished game found no ply node carrying a "selected" class at all, so
+  this is now the first of the readings, with the move list and the board behind
+  it.
+- **The legal-move markers are Chess.com's own**, not an imitation: `hint`,
+  `capture-hint` and `highlight`, the same borrowing the pieces already do with
+  `.piece` for the sprite, so they follow a restyle for free. Their ring is
+  scaled to the board - the `5px` in their rule is a floor, a live board
+  computes 7.5px on an 86px square - so ours is scaled the same way rather than
+  coming out a third too thin. The checked king keeps its red glow, with
+  Chess.com's own grow / wiggle / shrink timings, played when the check arrives
+  instead of on every re-render.
 
 ### Fixed
 
@@ -55,6 +71,22 @@ to the release its zips were published under.
   with fewer than three pieces as noise, so the most obviously drawn position on
   the board answered "Position not found." The guard is now that both kings are
   present, which is what actually tells a position from a stray match.
+- **The trigger appears on a finished game whose result modal is gone.** It
+  looked for `.game-result-component` and `result-text`; Chess.com dropped the
+  `-component` suffix and renamed the other to `result-row`, so on a game you
+  came back to nothing matched and the page read as "no game has ended here".
+  Matched on the durable `game-result` / `game-review` shapes now, with both
+  surfaces' class vocabularies pinned in a test - the trigger must be possible
+  on a finished game and impossible on one in progress.
+- **The engine is calibrated on your opponent, never on you.** When the player
+  row could not be matched, the opponent's rating fell back to the largest
+  rating on the page - which against anyone weaker than you is your own. Both
+  rows are found together now and the opponent is whichever is not yours, with
+  the "You" tag deciding when game review has reset the orientation.
+- **Walking the move list no longer counts as leaving the page.** The
+  navigation poller compared the whole URL, and Chess.com rewrites `?move=` on
+  every click - so glancing at an earlier move during a continuation would have
+  torn the game down.
 - **Captures en passant are possible again.** The scraped FEN carried a hardcoded
   "-" in the en-passant field, so Stockfish never generated the capture and the
   move came back refused. The two squares Chess.com highlights for the last move
