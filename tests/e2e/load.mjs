@@ -541,6 +541,52 @@ if (await page.locator('#sfctplay-btn').count() !== 0)
 console.log('PASS 20: no trigger on a game in progress, even while walking its move list');
 
 
+// 21. the capture ring is as heavy as Chess.com's. Their base rule declares 5px,
+// but a live board computes 7.5px on an 86px square - they scale it with the
+// board - so wearing the class alone left ours a third too thin, which is
+// exactly what "too thin" was. The fixture carries their three real rules, so
+// what this asserts is the contract we depend on, not our own invention.
+const CC_MARKER_CSS = `<style>
+.highlight,.hint,.capture-hint{height:12.5%;left:0;position:absolute;top:0;width:12.5%}
+.hint,.capture-hint{background-clip:content-box;border-radius:50%;box-sizing:border-box;pointer-events:none}
+.hint{background-color:rgba(0,0,0,.14);padding:4.2%}
+.capture-hint{border:5px solid rgba(0,0,0,.14)}
+</style>`;
+const RING = `<!doctype html><html><head>${CC_MARKER_CSS}</head><body style="margin:0">
+<div class="player-row-component player-row-top"><span class="cc-user-rating-white">(1450)</span></div>
+<div class="board-layout-sidebar"><div class="move-list">
+<div class="node white-move main-line-ply">x</div>
+<div class="node black-move main-line-ply">y</div></div></div>
+<wc-chess-board id="board" style="position:relative;display:block;width:640px;height:640px;background:#eee">
+${fenToDivs('4k3/8/8/8/8/5K2/8/R2r4')}</wc-chess-board>
+<div class="game-result">1-0</div></body></html>`;
+await page.route('https://www.chess.com/game/live/ring**', route =>
+  route.fulfill({ status: 200, contentType: 'text/html', body: RING }));
+await page.goto('https://www.chess.com/game/live/ring', { waitUntil: 'domcontentloaded' });
+await page.locator('#sfctplay-btn').waitFor({ timeout: 10000 }).catch(() => fail('no trigger on the ring page'));
+await page.locator('#sfctplay-btn').click();
+await page.waitForFunction(() => /Your move/.test(document.getElementById('sfct-badge')?.textContent || ''),
+  null, { timeout: 60000 }).catch(() => fail('engine never ready on the ring page'));
+const rbox = await page.locator('#board').boundingBox();
+await page.mouse.click(rbox.x + 0.5 * rbox.width / 8, rbox.y + 7.5 * rbox.height / 8); // the a1 rook
+await page.waitForTimeout(900);
+const marks = await page.$$eval('#board [data-sfct="dot"]', els => els.map(e => ({
+  cls: e.className, border: getComputedStyle(e).borderWidth, pad: getComputedStyle(e).padding })));
+const ring = marks.find(m => /capture-hint/.test(m.cls));
+if (!ring) fail('no capture ring on the rook it can take: ' + JSON.stringify(marks));
+const want = (rbox.width / 8) * (7.5 / 86);
+if (Math.abs(parseFloat(ring.border) - want) > 0.6)
+  fail(`ring is ${ring.border}, Chess.com's weight for this board is ${want.toFixed(1)}px`);
+// …and it really is scaled, not the 5px the base rule declares.
+if (Math.abs(parseFloat(ring.border) - 5) < 1)
+  fail(`ring is still the declared 5px (${ring.border}) - the scaling did not apply`);
+if (!marks.some(m => /(^| )hint/.test(m.cls) && parseFloat(m.pad) > 0))
+  fail('the plain dots lost their padding: ' + JSON.stringify(marks));
+console.log(`PASS 21: capture ring ${ring.border} on a ${Math.round(rbox.width / 8)}px square (Chess.com's weight), dots padded`);
+await page.locator('#sfct-badge').click();
+await page.waitForTimeout(300);
+
+
 console.log('\nALL CHECKS PASSED');
 if (logs.length) console.log('--- page logs ---\n' + logs.join('\n'));
 await ctx.close();

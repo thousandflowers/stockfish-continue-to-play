@@ -446,6 +446,13 @@ let _sfSyncing = false;
 // .highlight / .hint / .capture-hint, so the two never disagree.
 const SQUARE_BOX = 'position:absolute;top:0;left:0;width:12.5%;height:12.5%;';
 
+// Chess.com's capture ring is NOT the 5px their base rule declares: measured
+// against a live board it computes to 7.5px on an 86px square, so they scale it
+// with the board and the declared value is only a floor. Taking the class alone
+// left ours a third too thin — everything else about it matched to the pixel.
+// Recomputed every render, so a resized board keeps the right weight.
+const RING_RATIO = 7.5 / 86;
+
 function makePieceNode(pc) {
   const el = document.createElement('div');
   el.setAttribute('data-sfct', 'piece');
@@ -558,11 +565,14 @@ function syncBoardToState() {
       place(sel, selectedSq);
       board.appendChild(sel);
     }
+    const squarePx = board.getBoundingClientRect().width / 8;
     for (const dest of dests || []) {
       const dot = document.createElement('div');
       dot.setAttribute('data-sfct', 'dot');
-      dot.className = boardData[dest] ? 'capture-hint' : 'hint';
-      dot.style.cssText = SQUARE_BOX + 'z-index:6';
+      const capture = !!boardData[dest];
+      dot.className = capture ? 'capture-hint' : 'hint';
+      dot.style.cssText = SQUARE_BOX + 'z-index:6' +
+        (capture && squarePx ? `;border-width:${(squarePx * RING_RATIO).toFixed(1)}px` : '');
       place(dot, dest);
       board.appendChild(dot);
     }
