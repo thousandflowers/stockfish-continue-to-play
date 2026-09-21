@@ -205,6 +205,14 @@ function finishMateProbe() {
   const side = _mateSide, score = _mateScore;
   _mateSide = null; _mateScore = null;
   if (!st) return;
+  // Nothing has been played yet, so the position you picked was already over.
+  // Say that, rather than announce the result of a game that never started.
+  if (!st.moves.length) {
+    const title = score === 'mate' ? 'Already checkmate'
+      : score === 'draw' ? 'Already stalemate' : 'No legal moves here';
+    endGame(title, 'there is nothing to play from this position', { rematch: false });
+    return;
+  }
   const youLost = side === st.playerSide;
   if (score === 'mate') { endGame(youLost ? 'Stockfish won' : 'You won!', 'by checkmate'); return; }
   if (score === 'draw') { endGame('Draw', 'by stalemate'); return; }
@@ -358,7 +366,7 @@ function hideChesscomBoard() {
 // does not reset itself — and the result arrives as a modal over the board, the
 // way Chess.com announces one. Everything is only torn down when the player
 // dismisses that modal.
-function endGame(title, subtitle) {
+function endGame(title, subtitle, opts) {
   const st = chesscomState;
   if (!st) return;
   st.finished = true;
@@ -370,7 +378,7 @@ function endGame(title, subtitle) {
   _perftMoves = null;
   syncBoardToState();
   updateStatus('Game over');
-  showResultModal(title, subtitle || '');
+  showResultModal(title, subtitle || '', opts);
 }
 
 // Give the board back to Chess.com.
@@ -496,7 +504,7 @@ function attachPointerHandlers() {
     return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
   };
   const onDown = (e) => {
-    if (e.target?.closest?.('#sfct-badge, #sfctplay-banner, #sfctplay-btn, #sfct-result')) return;
+    if (e.target?.closest?.('#sfct-badge, #sfctplay-banner, #sfctplay-btn, #sfct-result, #sfct-ask')) return;
     if (e.target?.closest?.('[data-sfct="promo"]')) return; // the picker handles its own clicks
     if (cancelPromotion()) { e.preventDefault(); e.stopPropagation(); return; }
     const b = currentBoard();
@@ -764,12 +772,29 @@ function centreOnBoard(el) {
   el.style.transform = 'translate(-50%,-50%)';
 }
 
-function showResultModal(title, subtitle) {
-  document.getElementById('sfct-result')?.remove();
+// A full-width button in Chess.com's dialog style.
+function cardButton(text, primary) {
+  const b = document.createElement('button');
+  b.textContent = text;
+  Object.assign(b.style, {
+    width: '100%', minHeight: '44px', border: 'none', borderRadius: '8px',
+    fontSize: '15px', fontWeight: '700', cursor: 'pointer',
+    background: primary ? '#81b64c' : 'rgba(255,255,255,.09)',
+    color: primary ? '#fff' : 'rgba(255,255,255,.85)',
+    boxShadow: primary ? 'inset 0 -3px 0 rgba(0,0,0,.18)' : 'none',
+  });
+  return b;
+}
+
+// The dark card Chess.com announces things with: heading, subtitle, then a
+// column of buttons. Both the result and the "who is to move?" question are
+// this shape, so it is built once.
+function makeCard(id, title, subtitle) {
+  document.getElementById(id)?.remove();
   ensureAnimStyle();
   const card = document.createElement('div');
-  card.id = 'sfct-result';
-  card.setAttribute('data-sfct', 'result');
+  card.id = id;
+  card.setAttribute('data-sfct', 'card');
   Object.assign(card.style, {
     position: 'fixed', zIndex: '999998', width: 'min(330px,80vw)',
     background: '#262421', borderRadius: '12px', overflow: 'hidden',
@@ -790,28 +815,12 @@ function showResultModal(title, subtitle) {
 
   const body = document.createElement('div');
   Object.assign(body.style, { padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: '8px' });
-  const mk = (text, primary) => {
-    const b = document.createElement('button');
-    b.textContent = text;
-    Object.assign(b.style, {
-      width: '100%', minHeight: '44px', border: 'none', borderRadius: '8px',
-      fontSize: '15px', fontWeight: '700', cursor: 'pointer',
-      background: primary ? '#81b64c' : 'rgba(255,255,255,.09)',
-      color: primary ? '#fff' : 'rgba(255,255,255,.85)',
-      boxShadow: primary ? 'inset 0 -3px 0 rgba(0,0,0,.18)' : 'none',
-    });
-    return b;
-  };
-  const again = mk('Play again vs Stockfish', true);
-  again.onclick = rematch;
-  const back = mk('Back to Chess.com', false);
-  back.onclick = dismissResult;
-  const note = document.createElement('div');
-  note.textContent = 'The final position stays on the board until you leave.';
-  Object.assign(note.style, { fontSize: '11px', opacity: '.45', textAlign: 'center', marginTop: '2px' });
-  body.append(again, back, note);
-
   card.append(head, body);
+  return { card, body };
+}
+
+// Put a card on screen, centred on the board and staying there.
+function showCard(card) {
   document.body.appendChild(card);
   centreOnBoard(card);
   const reposition = () => centreOnBoard(card);
@@ -821,6 +830,56 @@ function showResultModal(title, subtitle) {
     window.removeEventListener('resize', reposition);
     window.removeEventListener('scroll', reposition);
   };
+}
+
+function closeCard(card) { card._sfctCleanup?.(); card.remove(); }
+
+// Asked only when the move list and the board cannot be reconciled on whose
+// turn it is. One question beats silently starting a game with the wrong player
+// up, which you would only notice once the engine moved a piece it should not
+// have been able to touch.
+function askSideToMove(onPick) {
+  const { card, body } = makeCard('sfct-ask', 'Who is to move?',
+    'this position does not say, so pick the side');
+  card.style.zIndex = '1000000'; // above the floating trigger, which stays up
+  const pick = (side) => () => { closeCard(card); onPick(side); };
+  const white = cardButton('\u2654  White', false);
+  const black = cardButton('\u265A  Black', false);
+  white.onclick = pick('w');
+  black.onclick = pick('b');
+  // A question you cannot back out of is a trap: the answer starts a game.
+  const cancel = document.createElement('button');
+  cancel.textContent = 'Cancel';
+  Object.assign(cancel.style, {
+    background: 'none', border: 'none', color: 'rgba(255,255,255,.45)',
+    fontSize: '11px', cursor: 'pointer', marginTop: '2px',
+  });
+  cancel.onclick = () => closeCard(card);
+  body.append(white, black, cancel);
+  showCard(card);
+}
+
+// ── Result modal ─────────────────────────────────────────────────
+// `opts.rematch === false` drops the "play again" button: a position that was
+// already over when you picked it would lead straight back to this card.
+function showResultModal(title, subtitle, opts) {
+  const { card, body } = makeCard('sfct-result', title, subtitle || '');
+  card.setAttribute('data-sfct', 'result');
+  const replayable = opts?.rematch !== false;
+  if (replayable) {
+    const again = cardButton('Play again vs Stockfish', true);
+    again.onclick = rematch;
+    body.appendChild(again);
+  }
+  const back = cardButton('Back to Chess.com', false);
+  back.onclick = dismissResult;
+  const note = document.createElement('div');
+  note.textContent = replayable
+    ? 'The final position stays on the board until you leave.'
+    : 'Go back, pick an earlier move, then Continue again.';
+  Object.assign(note.style, { fontSize: '11px', opacity: '.45', textAlign: 'center', marginTop: '2px' });
+  body.append(back, note);
+  showCard(card);
 }
 
 // ── Inject the "Continue vs Computer" button ─────────────────────────────────
@@ -835,11 +894,20 @@ function onContinueClick(e) {
     if (active === false) return;
     // The same board the game will be played on, not just the first one in the
     // document — a review page can carry more than one.
-    const fen = getFEN(findActiveBoard());
-    if (!fen) { showBanner('Position not found.'); return; }
-    removeTrigger(); // the trigger goes away while you play
-    showChesscomBoard(fen, getPlayerColor(), strength);
+    const board = findActiveBoard();
+    const side = readSideToMove(board);
+    if (side) { startContinuation(board, side, strength); return; }
+    askSideToMove((picked) => startContinuation(findActiveBoard(), picked, strength));
   });
+}
+
+// Capture the position on the board — whichever move in the list you are
+// looking at — and hand it to the engine.
+function startContinuation(board, side, strength) {
+  const fen = getFEN(board, side);
+  if (!fen) { showBanner('Position not found.'); return; }
+  removeTrigger(); // the trigger goes away while you play
+  showChesscomBoard(fen, getPlayerColor(), strength);
 }
 
 // Build a button that mimics a Chess.com modal button when given a template.
@@ -947,6 +1015,7 @@ function solidBackground(el) {
 }
 
 function removeTrigger() {
+  document.getElementById('sfct-ask')?.remove();
   document.getElementById('sfctplay-btn')?.remove();
   document.getElementById('sfctplay-dock')?.remove();
 }
