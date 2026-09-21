@@ -1066,11 +1066,14 @@ function injectButtons() {
   const dock = document.createElement('div');
   dock.id = 'sfctplay-dock';
   dock.dataset.anchor = modal ? 'modal' : 'panel';
+  const underCard = !!modal;
   Object.assign(dock.style, {
     position: 'fixed', zIndex: '999997', boxSizing: 'border-box',
-    padding: '0 20px 16px', borderRadius: '0 0 12px 12px',
     background: solidBackground(anchor),
-    boxShadow: '0 12px 32px rgba(0,0,0,.45)',
+    padding: underCard ? '0 20px 16px' : '10px 12px 12px',
+    borderRadius: underCard ? '0 0 12px 12px' : '12px 12px 0 0',
+    boxShadow: underCard ? '0 12px 32px rgba(0,0,0,.45)' : '0 -8px 24px rgba(0,0,0,.35)',
+    borderTop: underCard ? 'none' : '1px solid rgba(255,255,255,.08)',
   });
   dock.appendChild(btn);
   document.body.appendChild(dock);
@@ -1084,9 +1087,16 @@ function extensionAlive() {
   try { return !!chrome.runtime?.id; } catch (_) { return false; }
 }
 
-// Keep the dock flush with the bottom of whatever it was anchored to — the
-// result card or the move-list column — at that anchor's exact width, so the
-// two keep reading as one panel through scrolls and resizes.
+// Keep the dock aligned to whatever it was anchored to — the result card or the
+// move-list column — at that anchor's exact width, so the two keep reading as
+// one panel through scrolls and resizes.
+//
+// The two anchors need opposite treatment. A result card is a floating box with
+// empty page under it, so the dock hangs BELOW it. The move-list column runs the
+// full height of the window, so there is no "below" to hang in: the dock sits at
+// the bottom of the column as seen, inside the column's own width, reading as
+// its last row. Handing over to a floating button when the column ran past the
+// fold meant handing over every single time, since it always does.
 function alignTrigger() {
   const dock = document.getElementById('sfctplay-dock');
   if (!dock) return;
@@ -1094,17 +1104,11 @@ function alignTrigger() {
   if (!anchor) { removeTrigger(); return; }
   const r = anchor.getBoundingClientRect();
   if (!r.width) return;
-  // A column taller than the window would put the dock off the bottom of the
-  // screen, where nobody can reach it. Hand over to the floating button, which
-  // is anchored to nothing and so always visible.
-  if (dock.dataset.anchor === 'panel' && r.bottom > window.innerHeight - 48) {
-    removeTrigger();
-    injectFloatingButton();
-    return;
-  }
   dock.style.left = r.left + 'px';
-  dock.style.top = (r.bottom - 1) + 'px';
   dock.style.width = r.width + 'px';
+  if (dock.dataset.anchor !== 'panel') { dock.style.top = (r.bottom - 1) + 'px'; return; }
+  const h = dock.getBoundingClientRect().height || 64;
+  dock.style.top = Math.max(0, Math.min(r.bottom, window.innerHeight) - h) + 'px';
 }
 
 // The modal container itself is often transparent — walk up until something
