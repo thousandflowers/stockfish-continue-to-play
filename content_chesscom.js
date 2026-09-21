@@ -833,7 +833,9 @@ function onContinueClick(e) {
   e.preventDefault(); e.stopPropagation();
   chrome.storage.local.get(['active', 'strength'], ({ active, strength }) => {
     if (active === false) return;
-    const fen = getFEN();
+    // The same board the game will be played on, not just the first one in the
+    // document — a review page can carry more than one.
+    const fen = getFEN(findActiveBoard());
     if (!fen) { showBanner('Position not found.'); return; }
     removeTrigger(); // the trigger goes away while you play
     showChesscomBoard(fen, getPlayerColor(), strength);

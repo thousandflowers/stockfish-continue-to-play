@@ -461,3 +461,35 @@ describe('isGameOver visibility', () => {
     expect(d.isGameOver()).toBe(true);
   });
 });
+
+// ── Which board gets read ────────────────────────────────────────────────────
+// getFEN() took the FIRST board in the document while the content script played
+// on the LARGEST visible one. On a page carrying more than one they disagree,
+// and navigating the move list is exactly where a second board shows up.
+describe('board selection and our own pieces', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  const boardWith = (...classes) => {
+    const b = document.createElement('wc-chess-board');
+    b.innerHTML = classes.map(c => `<div class="piece ${c}"></div>`).join('');
+    document.body.appendChild(b);
+    return b;
+  };
+
+  it('reads the board it is handed, not the first one on the page', () => {
+    boardWith('wk square-11', 'bk square-18', 'wp square-21');           // decoy
+    const real = boardWith('wk square-51', 'bk square-58', 'wp square-54');
+    expect(d.getFEN(real).split(' ')[0]).toContain('4K3');
+  });
+  it('falls back to the first board when handed nothing', () => {
+    boardWith('wk square-11', 'bk square-18', 'wp square-21');
+    expect(d.getFEN().split(' ')[0]).toContain('KP6');
+  });
+  it('our own overlay pieces are not part of the position', () => {
+    const b = document.createElement('wc-chess-board');
+    b.innerHTML = '<div class="piece wk square-51"></div><div class="piece bk square-58"></div>' +
+                  '<div class="piece wp square-54"></div>' +
+                  '<div class="piece wq square-41" data-sfct="piece"></div>';
+    document.body.appendChild(b);
+    expect(d.buildFENFromPieces(b)).not.toContain('Q');
+  });
+});
