@@ -454,7 +454,7 @@ console.log('PASS 18: mate, stalemate and the quiet draws all land -', ENDINGS.l
 // ply the URL names.
 const REVISIT = `<!doctype html><html><body style="margin:0">
 <div class="player-row-component player-row-top"><span class="cc-user-rating-white">(1450)</span></div>
-<div class="board-layout-sidebar" style="position:absolute;right:0;top:0;width:300px;height:520px;background:#262421">
+<div class="board-layout-sidebar" style="box-sizing:border-box;position:absolute;right:0;top:0;width:300px;height:520px;background:#262421">
   <div class="game-tab-scrollable"><div class="move-list">
     <div class="node white-move main-line-ply">e4</div>
     <div class="node black-move main-line-ply">e5</div>
@@ -478,7 +478,12 @@ const dockBox = await page.locator('#sfctplay-dock').boundingBox();
 const colBox = await page.locator('.board-layout-sidebar').boundingBox();
 if (Math.abs(dockBox.x - colBox.x) > 2 || Math.abs(dockBox.width - colBox.width) > 2)
   fail(`dock is not flush with the column: dock=${JSON.stringify(dockBox)} col=${JSON.stringify(colBox)}`);
-console.log('PASS 19: trigger docked to the move-list column, no modal needed');
+// The column has to have been asked to shrink, so the bar lands in free space
+// rather than over the row of icons at its foot.
+const reserved = await page.$eval('.board-layout-sidebar',
+  el => el.hasAttribute('data-sfctcolumn') && el.style.paddingBottom);
+if (!reserved) fail('the column was not asked to make room; the bar would cover its foot');
+console.log('PASS 19: trigger docked to the move-list column, no modal needed, column reserved', reserved);
 
 await page.locator('#sfctplay-btn').click();
 // ?move=1 is White's first move, so Black is up: the engine plays before you do.
@@ -491,7 +496,29 @@ const movedBlack = (await page.$$eval('#board [data-sfct="piece"]', els => els
 if (!movedBlack.length) fail('no black piece left its home ranks: ?move= was not read');
 console.log('PASS 19b: started from the ply in the URL - Black moved first');
 await page.locator('#sfct-badge').click();
-await page.waitForTimeout(300);
+await page.waitForTimeout(500);
+// Stopping brings the trigger straight back, so the column is rightly shrunk
+// again. What has to hold is the pairing: shrunk exactly while the bar is there.
+const paired = await page.evaluate(() => !!document.getElementById('sfctplay-dock') ===
+  !!document.querySelector('[data-sfctcolumn]'));
+if (!paired) fail('the column shrink and the bar disagree about whether the bar exists');
+
+// Take the result away, which is what leaving a finished game looks like: the
+// trigger must go, and the column must come back exactly as it was.
+await page.evaluate(() => {
+  document.querySelector('.game-result')?.remove();
+  document.querySelector('.game-review-buttons-component')?.remove();
+});
+await page.waitForTimeout(800);
+const gone = await page.evaluate(() => ({
+  dock: !!document.getElementById('sfctplay-dock'),
+  btn: !!document.getElementById('sfctplay-btn'),
+  reserved: !!document.querySelector('[data-sfctcolumn]'),
+  padding: document.querySelector('.board-layout-sidebar')?.style.paddingBottom,
+}));
+if (gone.dock || gone.btn) fail('the trigger outlived the finished game: ' + JSON.stringify(gone));
+if (gone.reserved || gone.padding) fail('the column was left shrunk: ' + JSON.stringify(gone));
+console.log('PASS 19c: column shrunk only while the bar is there, handed back intact after');
 
 // 20. and the same page WITHOUT a result: a game still being played. The trigger
 // must be impossible here, whatever else is on the page.

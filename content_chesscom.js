@@ -375,6 +375,7 @@ function showChesscomBoard(fen, color, strengthSetting) {
 function hideChesscomBoard() {
   if (chesscomState?._ptrCleanup) chesscomState._ptrCleanup();
   if (chesscomState?._refreshTimer) clearInterval(chesscomState._refreshTimer);
+  releaseColumnFoot();
   document.getElementById('sfct-modal-blocker')?.remove();
   document.getElementById('sfct-badge')?.remove();
   document.getElementById('sfct-result')?.remove();
@@ -1108,6 +1109,10 @@ function alignTrigger() {
   dock.style.width = r.width + 'px';
   if (dock.dataset.anchor !== 'panel') { dock.style.top = (r.bottom - 1) + 'px'; return; }
   const h = dock.getBoundingClientRect().height || 64;
+  // Ask the column to be that much shorter, so the bar lands in free space
+  // instead of over the icons at its foot. Falls back to covering them if the
+  // column will not shrink.
+  reserveColumnFoot(anchor, h);
   dock.style.top = Math.max(0, Math.min(r.bottom, window.innerHeight) - h) + 'px';
 }
 
@@ -1122,6 +1127,7 @@ function solidBackground(el) {
 }
 
 function removeTrigger() {
+  releaseColumnFoot();
   document.getElementById('sfctplay-btn')?.remove();
   document.getElementById('sfctplay-dock')?.remove();
 }

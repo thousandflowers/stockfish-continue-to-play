@@ -661,3 +661,51 @@ describe('isGameOver on the real surfaces', () => {
     expect(d.isGameOver()).toBe(false);
   });
 });
+
+// ── reserveColumnFoot ────────────────────────────────────────────────────────
+// The bar cannot be inserted into Chess.com's column (Vue throws on an
+// unexpected child), so the column is asked to be shorter instead and the bar
+// lands in the free space. That only works on a border-box element, so the
+// result is measured rather than assumed.
+describe('reserveColumnFoot', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  const panel = (heightAfterPadding) => {
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    // jsdom has no layout: stand in for it, keyed on whether padding was applied.
+    el.getBoundingClientRect = () => ({
+      height: el.style.paddingBottom ? heightAfterPadding : 520,
+      width: 300, left: 0, top: 0, right: 300, bottom: 520,
+    });
+    return el;
+  };
+
+  it('border-box: the column absorbs the padding, so it is kept', () => {
+    const el = panel(520); // unchanged height
+    expect(d.reserveColumnFoot(el, 56)).toBe(true);
+    expect(el.style.paddingBottom).toBe('56px');
+  });
+  it('content-box: the column grew instead, so the padding is dropped', () => {
+    const el = panel(576); // 520 + 56
+    expect(d.reserveColumnFoot(el, 56)).toBe(false);
+    expect(el.style.paddingBottom).toBe('');
+  });
+  it('does not reserve twice', () => {
+    const el = panel(520);
+    d.reserveColumnFoot(el, 56);
+    expect(d.reserveColumnFoot(el, 90)).toBe(false);
+    expect(el.style.paddingBottom).toBe('56px');
+  });
+  it('releasing hands back a padding the column already had', () => {
+    const el = panel(520);
+    el.style.paddingBottom = '8px';
+    d.reserveColumnFoot(el, 56);
+    expect(el.style.paddingBottom).toBe('56px');
+    d.releaseColumnFoot();
+    expect(el.style.paddingBottom).toBe('8px');
+    expect(el.hasAttribute('data-sfctcolumn')).toBe(false);
+  });
+  it('releasing is safe when nothing was reserved', () => {
+    expect(() => d.releaseColumnFoot()).not.toThrow();
+  });
+});
