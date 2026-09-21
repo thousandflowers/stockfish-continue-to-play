@@ -40,9 +40,9 @@ describe('isPromotion / toUci', () => {
     expect(c.isPromotion(b, 'h2', 'h1')).toBe(true);
     expect(c.isPromotion(b, 'e1', 'e2')).toBe(false);
   });
-  it('queens by default, honours an explicit choice', () => {
+  it('needs a choice for a promotion, and honours it', () => {
     const b = pawns();
-    expect(c.toUci(b, 'a7', 'a8')).toBe('a7a8q');
+    expect(c.toUci(b, 'a7', 'a8')).toBeNull();
     expect(c.toUci(b, 'a7', 'a8', 'n')).toBe('a7a8n');
     expect(c.toUci(b, 'e1', 'e2', 'n')).toBe('e1e2'); // not a promotion, no suffix
   });
@@ -179,8 +179,19 @@ describe('applyUciMove', () => {
 
 describe('toUci', () => {
   it('plain move', () => { expect(c.toUci({ e2: 'P' }, 'e2', 'e4')).toBe('e2e4'); });
-  it('auto-queens a white promotion', () => { expect(c.toUci({ e7: 'P' }, 'e7', 'e8')).toBe('e7e8q'); });
-  it('auto-queens a black promotion', () => { expect(c.toUci({ e2: 'p' }, 'e2', 'e1')).toBe('e2e1q'); });
+  // No queen default. A promotion with nothing chosen is not a move: the
+  // caller has to ask the player first, and the picker is the only way a
+  // piece gets picked.
+  it('refuses a white promotion with no piece chosen', () => {
+    expect(c.toUci({ e7: 'P' }, 'e7', 'e8')).toBeNull();
+  });
+  it('refuses a black promotion with no piece chosen', () => {
+    expect(c.toUci({ e2: 'p' }, 'e2', 'e1')).toBeNull();
+  });
+  it.each(['q', 'r', 'b', 'n'])('carries the chosen piece through (%s)', (p) => {
+    expect(c.toUci({ e7: 'P' }, 'e7', 'e8', p)).toBe('e7e8' + p);
+    expect(c.toUci({ e2: 'p' }, 'e2', 'e1', p)).toBe('e2e1' + p);
+  });
   it('no promo for a non-pawn reaching the back rank', () => {
     expect(c.toUci({ e7: 'R' }, 'e7', 'e8')).toBe('e7e8');
   });

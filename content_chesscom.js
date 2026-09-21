@@ -570,7 +570,10 @@ function refuseMove() {
 // then knight, rook, bishop — its order, since that is the order people expect.
 function askPromotion(to, side, onPick) {
   const st = chesscomState;
-  if (!st?.board) { onPick('q'); return; }
+  // No board to hang the picker off: refuse the move rather than choose a
+  // piece on the player's behalf. A queen nobody asked for is worse than a
+  // move that did not happen, which they can simply play again.
+  if (!st?.board) { updateStatus('Cannot show the promotion picker'); return; }
   document.querySelectorAll('[data-sfct="promo"]').forEach(el => el.remove());
   const flipped = isFlipped(st.board);
   const f = to.charCodeAt(0) - 97;
@@ -668,6 +671,7 @@ function makePlayerMove(from, to, promo) {
     if (st.yourPaces.length > PACE_SAMPLES) st.yourPaces.shift();
   }
   const uci = toUci(st.boardData, from, to, promo);
+  if (!uci) { updateStatus('Choose a piece'); return; } // a promotion with nothing chosen
   const res = applyUciMove(st.boardData, uci);
   if (!res.moved) return;
   st.boardData = res.board;
