@@ -709,3 +709,48 @@ describe('reserveColumnFoot', () => {
     expect(() => d.releaseColumnFoot()).not.toThrow();
   });
 });
+
+// ── getOpponentElo: theirs, never yours ──────────────────────────────────────
+// The engine's strength is calibrated on this number, so reading the wrong row
+// means playing against a Stockfish tuned to your OWN rating. Class names taken
+// from a live page on 2026-09-22: board-layout-player board-layout-top and
+// board-layout-player board-layout-bottom.
+describe('getOpponentElo picks the opponent, not the bigger number', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  const rows = (topRating, bottomRating, youOnTop) => {
+    document.body.innerHTML =
+      `<div class="board-layout-player board-layout-top"><div class="player-row-component player-row-top">` +
+      `${youOnTop ? '<span class="user-tagline-you">You</span>' : ''}` +
+      `<span class="cc-user-rating-white">(${topRating})</span></div></div>` +
+      `<div class="board-layout-player board-layout-bottom"><div class="player-row-component">` +
+      `${youOnTop ? '' : '<span class="user-tagline-you">You</span>'}` +
+      `<span class="cc-user-rating-white">(${bottomRating})</span></div></div>`;
+  };
+
+  it('reads the top row when you are at the bottom', () => {
+    rows(463, 433, false);
+    expect(d.getOpponentElo()).toBe(463);
+  });
+  it('still reads the top row when the opponent is WEAKER than you', () => {
+    // The old code took the largest rating on the page, so this returned 2100 -
+    // your own - and the engine came out far stronger than the game deserved.
+    rows(900, 2100, false);
+    expect(d.getOpponentElo()).toBe(900);
+  });
+  it('reads the bottom row when the "You" tag is on top', () => {
+    // Game review can reset the orientation and put you at the top.
+    rows(2100, 900, true);
+    expect(d.getOpponentElo()).toBe(900);
+    expect(d.getPlayerColor()).toBe('black');
+  });
+  it('1500 rather than the biggest number on the page', () => {
+    // No player row at all - a renamed layout. Guessing from loose rating nodes
+    // is how your own rating got picked up.
+    document.body.innerHTML = '<span class="rating">2400</span><span class="rating">800</span>';
+    expect(d.getOpponentElo()).toBe(1500);
+  });
+  it('an explicit data-opponent-rating is trusted wherever it sits', () => {
+    document.body.innerHTML = '<div data-opponent-rating="1740"></div>';
+    expect(d.getOpponentElo()).toBe(1740);
+  });
+});
