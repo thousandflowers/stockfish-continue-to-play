@@ -570,3 +570,46 @@ describe('isSelectedPly strictness', () => {
     expect(d.readSideToMove()).toBe('b');
   });
 });
+
+// ── plyFromUrl ───────────────────────────────────────────────────────────────
+// Chess.com writes the ply you are looking at into the query string as you walk
+// the move list. Taken from a live page: a finished game at
+// /game/live/184155665976?username=…&move=20, where move 20 is Black's 10th and
+// no ply node carried a "selected" class at all.
+describe('plyFromUrl', () => {
+  const at = (search) => { history.replaceState({}, '', '/game/live/1' + search); };
+  afterEach(() => { history.replaceState({}, '', '/'); document.body.innerHTML = ''; });
+
+  it('reads the ply out of ?move=', () => { at('?move=20'); expect(d.plyFromUrl()).toBe(20); });
+  it('survives other parameters around it', () => {
+    at('?username=eugzampon&move=7'); expect(d.plyFromUrl()).toBe(7);
+  });
+  it('null with no parameter - you are at the end of the game', () => {
+    at(''); expect(d.plyFromUrl()).toBeNull();
+  });
+  it('null for nonsense', () => { at('?move=abc'); expect(d.plyFromUrl()).toBeNull(); });
+  it('null for move=0, which is not a ply', () => { at('?move=0'); expect(d.plyFromUrl()).toBeNull(); });
+
+  it('an even ply was Black’s, so White is up', () => {
+    at('?move=20');
+    expect(d.readSideToMove()).toBe('w');
+  });
+  it('an odd ply was White’s, so Black is up', () => {
+    at('?move=19');
+    expect(d.readSideToMove()).toBe('b');
+  });
+  it('the URL beats the end of the move list', () => {
+    document.body.innerHTML = '<div class="move-list">' +
+      Array.from({ length: 6 }, (_, i) =>
+        `<div class="node ${i % 2 ? 'black' : 'white'}-move main-line-ply">x</div>`).join('') +
+      '</div>';
+    at('?move=1'); // scrubbed right back to White's first move
+    expect(d.readSideToMove()).toBe('b');
+  });
+  it('a colour tag that contradicts the URL sends it to the board', () => {
+    document.body.innerHTML = '<div class="move-list">' +
+      '<div class="node black-move main-line-ply">x</div></div>'; // ply 1 tagged Black
+    at('?move=1');
+    expect(d.readSideToMove()).toBeNull(); // no board to ask, so: ask the player
+  });
+});

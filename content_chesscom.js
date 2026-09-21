@@ -31,7 +31,11 @@ const POLL_INTERVAL_MS = 200;
 const NAV_POLL_INTERVAL_MS = 1000;
 const BANNER_TIMEOUT_MS = 15000;
 
-let lastUrl = location.href;
+// Only the page identity, never the query: Chess.com rewrites ?move=N on every
+// click in the move list, and treating that as navigation would tear down a
+// continuation the moment the player glanced at an earlier move.
+const pageKey = () => location.origin + location.pathname;
+let lastPage = pageKey();
 
 // ── State ───────────────────────────────────────────────────────────────────
 // chesscomState = { startFen, moves[], boardData, selectedSq, playerSide,
@@ -1147,8 +1151,9 @@ const pollTimer = setInterval(tryInject, POLL_INTERVAL_MS);
 
 // SPA navigation: Chess.com swaps pages without a reload.
 const navTimer = setInterval(() => {
-  if (location.href === lastUrl) return;
-  lastUrl = location.href;
+  const now = pageKey();
+  if (now === lastPage) return;
+  lastPage = now;
   removeTrigger();
   document.getElementById('sfctplay-banner')?.remove();
   hideChesscomBoard();
