@@ -356,11 +356,15 @@ await page.waitForFunction(() => /Your move/.test(document.getElementById('sfct-
   null, { timeout: 60000 }).catch(async () => fail(
   'engine never moved first from the selected ply; badge=' +
   (await page.locator('#sfct-badge').textContent().catch(() => '(none)'))));
-const blackNow = await blackSquares();
-// The scraped placement had every black piece at home. If one has moved, Black
-// was to move - which only the SELECTED ply says.
-if (blackNow.includes('bp@square-57') && blackNow.includes('bn@square-78')) {
-  fail('no black piece moved: the side to move came from the end of the list, not the selection');
+// The scraped placement has every black piece on ranks 7 and 8, and every legal
+// black first move lands on rank 6 or 5. So "a black piece is off its home
+// ranks" means Black moved - whichever move the engine happened to pick, which
+// naming two specific pieces did not survive.
+const blackOffHome = (await blackSquares())
+  .filter(sq => +((sq.match(/square-\d(\d)/) || [])[1]) < 7);
+if (!blackOffHome.length) {
+  fail('no black piece left its home ranks: the side to move came from the end ' +
+       'of the list, not from the selected ply');
 }
 console.log('PASS 16: started from the selected ply - Black moved first, as that position says');
 await page.locator('#sfct-badge').click();
@@ -387,6 +391,60 @@ await page.getByRole('button', { name: /White/ }).click();
 await page.waitForSelector('#sfct-badge', { timeout: 10000 })
   .catch(() => fail('answering the prompt did not start the game'));
 console.log('PASS 17: asked whose move it was, and started once answered');
+
+
+// 18. how a continued game is allowed to END. Running out of legal moves covers
+// mate and stalemate; every other draw leaves legal moves on the board, so
+// before the draw handling a continuation that reached one simply never
+// finished. Each case is picked up straight from the position, so the verdict
+// arrives without a move being played.
+const ENDINGS = [
+  // name, placement, plies, what the result must say (null = must keep playing)
+  ['sm',   'k7/2Q5/K7/8/8/8/8/8',        1, /stalemate/i],
+  ['cm',   'k7/1Q6/K7/8/8/8/8/8',        1, /checkmate/i],
+  ['kk',   '4k3/8/8/8/8/8/8/4K3',        2, /force mate/i],  // bare kings
+  ['kbk',  '4k3/8/8/8/2B5/8/8/4K3',      2, /force mate/i],  // king and one bishop
+  ['knnk', '4k3/8/8/8/1N1N4/8/8/4K3',    2, null],           // two knights: NOT automatic
+  ['kpk',  '4k3/8/8/8/8/8/P7/4K3',       2, null],           // a pawn is enough
+];
+for (const [name, placement, plyCount, want] of ENDINGS) {
+  const plies = ['<div class="node white-move main-line-ply">x</div>',
+                 '<div class="node black-move main-line-ply">y</div>'].slice(0, plyCount).join('');
+  const html = `<!doctype html><html><body style="margin:0">
+<div class="player-row-component player-row-top"><span class="cc-user-rating-white">(1450)</span></div>
+<div class="board-layout-sidebar"><div class="move-list">${plies}</div></div>
+<wc-chess-board id="board" style="position:relative;display:block;width:480px;height:480px;background:#eee">
+${fenToDivs(placement)}</wc-chess-board>
+<div class="game-over-modal-shell-container"><div class="game-over-modal-shell-buttons">
+<button aria-label="New Game">New Game</button></div></div></body></html>`;
+  await page.route(`https://www.chess.com/game/live/end-${name}`, r =>
+    r.fulfill({ status: 200, contentType: 'text/html', body: html }));
+  await page.goto(`https://www.chess.com/game/live/end-${name}`, { waitUntil: 'domcontentloaded' });
+  await page.locator('#sfctplay-btn').waitFor({ timeout: 10000 })
+    .catch(() => fail(`no button on the ${name} page`));
+  await page.locator('#sfctplay-btn').click();
+  if (want) {
+    await page.locator('#sfct-result').waitFor({ timeout: 90000 })
+      .catch(async () => fail(`${name}: no verdict; badge=` +
+        (await page.locator('#sfct-badge').textContent().catch(() => '(none)'))));
+    const said = (await page.locator('#sfct-result').textContent()).trim();
+    if (!want.test(said)) fail(`${name}: expected ${want}, got ${JSON.stringify(said.slice(0, 60))}`);
+    // A position that was over before it started must not offer to replay itself.
+    if (await page.getByRole('button', { name: 'Play again vs Stockfish' }).count())
+      fail(`${name}: offered to replay a position that was already finished`);
+    await page.getByRole('button', { name: 'Back to Chess.com' }).click();
+  } else {
+    await page.waitForFunction(() => /Your move|thinking/.test(
+      document.getElementById('sfct-badge')?.textContent || ''), null, { timeout: 60000 })
+      .catch(() => fail(`${name}: never became playable`));
+    await page.waitForTimeout(1200);
+    if (await page.locator('#sfct-result').count())
+      fail(`${name}: called a game that is still playable finished`);
+    await page.locator('#sfct-badge').click();
+  }
+  await page.waitForTimeout(300);
+}
+console.log('PASS 18: mate, stalemate and the quiet draws all land -', ENDINGS.length, 'endings');
 
 
 console.log('\nALL CHECKS PASSED');
