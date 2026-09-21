@@ -379,7 +379,9 @@ function hideChesscomBoard() {
   chesscomState?._restoreOpponentName?.();
   if (chesscomState?.board) chesscomState.board.style.touchAction = '';
   // Drop our overlay pieces/dots so the board shows Chess.com's again.
-  document.querySelectorAll('[data-sfct]').forEach(el => el.remove());
+  // _sfctCleanup first: a card removed without it leaves its resize/scroll
+  // listeners on window, holding the detached node alive.
+  document.querySelectorAll('[data-sfct]').forEach(el => { el._sfctCleanup?.(); el.remove(); });
   sessionId++;
   teardownEngine();
   _perftMoves = null;
@@ -856,7 +858,8 @@ function cardButton(text, primary) {
 // column of buttons. Both the result and the "who is to move?" question are
 // this shape, so it is built once.
 function makeCard(id, title, subtitle) {
-  document.getElementById(id)?.remove();
+  const old = document.getElementById(id);
+  if (old) { old._sfctCleanup?.(); old.remove(); } // never orphan its listeners
   ensureAnimStyle();
   const card = document.createElement('div');
   card.id = id;
@@ -963,7 +966,13 @@ function onContinueClick(e) {
     const board = findActiveBoard();
     const side = readSideToMove(board);
     if (side) { startContinuation(board, side, strength); return; }
-    askSideToMove((picked) => startContinuation(findActiveBoard(), picked, strength));
+    // Re-check the gate when the question is ANSWERED, not only when it was
+    // asked: the click that starts a game is this one, and the page may have
+    // moved on while the card sat open.
+    askSideToMove((picked) => {
+      if (chesscomState || !isGameOver()) return;
+      startContinuation(findActiveBoard(), picked, strength);
+    });
   });
 }
 

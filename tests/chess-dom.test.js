@@ -522,3 +522,44 @@ describe('sidebarPanel', () => {
     expect(d.sidebarPanel()).toBeNull();
   });
 });
+
+// ── isSelectedPly: a marker that is not a marker ─────────────────────────────
+// The dangerous direction is a FALSE positive. Anchoring on the wrong ply makes
+// both list readings agree with each other on that wrong node, so the answer
+// comes back confident instead of falling through to the board.
+describe('isSelectedPly strictness', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  const list = (...classes) => {
+    document.body.innerHTML = '<div class="move-list">' +
+      classes.map((c, i) => `<div class="node ${i % 2 ? 'black' : 'white'}-move main-line-ply ${c}">x</div>`).join('') +
+      '</div>';
+  };
+  const highlight = (from, to, pieceClass) => {
+    const b = document.createElement('wc-chess-board');
+    b.innerHTML = `<div class="highlight square-${from}"></div><div class="highlight square-${to}"></div>` +
+                  `<div class="piece ${pieceClass} square-${to}"></div>`;
+    document.body.appendChild(b);
+  };
+
+  it('“de-selected” is not selected', () => {
+    list('', 'de-selected', '', '');
+    expect(d.plyNodes().some(d.isSelectedPly)).toBe(false);
+  });
+  it('“not-selected” is not selected', () => {
+    list('not-selected', '', '', '');
+    expect(d.plyNodes().some(d.isSelectedPly)).toBe(false);
+  });
+  it('a negated marker does not anchor the answer on the wrong ply', () => {
+    list('', 'de-selected', '', ''); // 4 plies, last is Black's, so White is up
+    expect(d.readSideToMove()).toBe('w');
+  });
+  it('“selected” as a whole token still counts', () => {
+    list('', 'selected', '', '');
+    expect(d.readSideToMove()).toBe('w'); // ply 2 was Black's
+  });
+  it('two plies claiming the selection defer to the board', () => {
+    list('selected', '', 'selected', '');
+    highlight('52', '54', 'wp'); // a white pawn just landed: Black is up
+    expect(d.readSideToMove()).toBe('b');
+  });
+});
