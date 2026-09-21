@@ -587,6 +587,75 @@ await page.locator('#sfct-badge').click();
 await page.waitForTimeout(300);
 
 
+// 22. native mode: when Chess.com's board component is reachable, the extension
+// stops painting and asks THEIR board to play the moves. A fake game object
+// stands in for it, recording what it was asked to do - which is the contract
+// this depends on, and the one thing a fixture without a board component cannot
+// exercise (every check above runs the overlay fallback instead).
+const NATIVE = `<!doctype html><html><head>${CC_MARKER_CSS}</head><body style="margin:0">
+<div class="player-row-component player-row-top"><span class="cc-user-rating-white">(1450)</span></div>
+<div class="board-layout-sidebar"><div class="move-list">
+<div class="node white-move main-line-ply">x</div>
+<div class="node black-move main-line-ply">y</div></div></div>
+<wc-chess-board id="board" style="position:relative;display:block;width:640px;height:640px;background:#eee">
+${fenToDivs('4k3/8/8/8/8/8/4P3/4K3')}</wc-chess-board>
+<div class="game-result">1-0</div>
+<script>
+(() => {
+  const b = document.getElementById('board');
+  window.__log = { moves: [], continuation: 0, reset: 0 };
+  b.game = {
+    getFEN: () => '4k3/8/8/8/8/8/4P3/4K3 w - - 0 1',
+    getResult: () => '1-0',
+    isGameOver: () => true,
+    isCheck: () => false,
+    getTurn: () => 1,
+    getPlayingAs: () => 1,
+    getLegalMoves: () => [],
+    createContinuation: () => { window.__log.continuation++; return {}; },
+    move: (a) => { window.__log.moves.push(a); return {}; },
+    resetToMainLine: () => { window.__log.reset++; return {}; },
+  };
+})();
+<\/script></body></html>`;
+await page.route('https://www.chess.com/game/live/native**', route =>
+  route.fulfill({ status: 200, contentType: 'text/html', body: NATIVE }));
+await page.goto('https://www.chess.com/game/live/native', { waitUntil: 'domcontentloaded' });
+await page.locator('#sfctplay-btn').waitFor({ timeout: 10000 }).catch(() => fail('no trigger on the native page'));
+await page.locator('#sfctplay-btn').click();
+await page.waitForFunction(() => /Your move/.test(document.getElementById('sfct-badge')?.textContent || ''),
+  null, { timeout: 60000 }).catch(() => fail('engine never ready in native mode'));
+await page.waitForTimeout(600);
+
+const nat = await page.evaluate(() => ({
+  ours: document.querySelectorAll('[data-sfct="piece"]').length,
+  theirs: [...document.querySelectorAll('#board [class*="piece"]')]
+    .filter(e => !e.hasAttribute('data-sfct') && getComputedStyle(e).display !== 'none').length,
+  log: window.__log,
+}));
+if (nat.ours !== 0) fail(`we painted ${nat.ours} pieces in native mode; their board should be drawing`);
+if (nat.theirs < 3) fail(`Chess.com's own pieces were hidden in native mode (${nat.theirs} visible)`);
+if (nat.log.continuation !== 1) fail('the continuation was not branched off: ' + JSON.stringify(nat.log));
+console.log('PASS 22: native mode - we paint nothing,', nat.theirs, 'of their pieces stand, continuation branched');
+
+// A move has to reach THEIR board, with from and to.
+const nbox = await page.locator('#board').boundingBox();
+const nsq = (f, r) => ({ x: nbox.x + (f - 0.5) * nbox.width / 8, y: nbox.y + (8 - r + 0.5) * nbox.height / 8 });
+await page.mouse.click(nsq(5, 2).x, nsq(5, 2).y); await page.waitForTimeout(500);
+await page.mouse.click(nsq(5, 4).x, nsq(5, 4).y); await page.waitForTimeout(1500);
+const played = await page.evaluate(() => window.__log.moves);
+if (!played.some(m => m.from === 'e2' && m.to === 'e4'))
+  fail('the move never reached their board: ' + JSON.stringify(played));
+console.log('PASS 22b: the move went to their board -', JSON.stringify(played[0]));
+
+// …and stopping hands the real game back.
+await page.locator('#sfct-badge').click();
+await page.waitForTimeout(800);
+const reset = await page.evaluate(() => window.__log.reset);
+if (!reset) fail('resetToMainLine was never called - the variation would be left on the game');
+console.log('PASS 22c: stopping dropped the variation and restored the main line');
+
+
 console.log('\nALL CHECKS PASSED');
 if (logs.length) console.log('--- page logs ---\n' + logs.join('\n'));
 await ctx.close();
