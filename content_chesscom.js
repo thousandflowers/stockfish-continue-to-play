@@ -455,6 +455,15 @@ function makePieceNode(pc) {
   return el;
 }
 
+// Restart Chess.com's grow / wiggle / shrink on the checked king.
+function replayCheck() {
+  const el = document.querySelector('[data-sfct="check"] .sfct-check-el');
+  if (!el) return;
+  el.style.animation = 'none';
+  void el.offsetWidth;
+  el.style.animation = '';
+}
+
 function syncBoardToState() {
   if (!chesscomState?.board || _sfSyncing) return;
   _sfSyncing = true;
@@ -502,16 +511,26 @@ function syncBoardToState() {
       nodes.set(a.sq, el);
     }
 
-    // A king in check gets the red square, and keeps it while the check stands.
-    board.querySelectorAll(':scope > [data-sfct="check"]').forEach(el => el.remove());
+    // A king in check keeps the red square while the check stands. The node is
+    // REUSED, never rebuilt: recreating it restarts Chess.com's grow/wiggle, so
+    // it replayed on every re-render — picking a piece up made the king twitch.
+    // It only plays when the check first appears, or moves to another king.
     const checkedKing = isKingAttacked(boardData, st.sideToMove) && kingSquare(boardData, st.sideToMove);
-    if (checkedKing) {
-      const mark = document.createElement('div');
-      mark.setAttribute('data-sfct', 'check');
-      mark.style.cssText = 'position:absolute;top:0;left:0;width:12.5%;height:12.5%;z-index:3';
-      mark.appendChild(Object.assign(document.createElement('div'), { className: 'sfct-check-el' }));
-      place(mark, checkedKing);
-      board.appendChild(mark);
+    let mark = board.querySelector(':scope > [data-sfct="check"]');
+    if (!checkedKing) {
+      mark?.remove();
+    } else {
+      if (!mark) {
+        mark = document.createElement('div');
+        mark.setAttribute('data-sfct', 'check');
+        mark.style.cssText = SQUARE_BOX + 'z-index:3';
+        mark.appendChild(Object.assign(document.createElement('div'), { className: 'sfct-check-el' }));
+        board.appendChild(mark);
+        place(mark, checkedKing);
+      } else if (mark.dataset.sq !== checkedKing) {
+        place(mark, checkedKing);
+        replayCheck();
+      }
     }
 
     // The square you picked up from, and where it can go. All three wear
@@ -621,11 +640,7 @@ function refuseMove() {
   const inCheck = st && isKingAttacked(st.boardData, st.sideToMove);
   updateStatus(inCheck ? 'You are in check' : 'Illegal move');
   if (!inCheck) return;
-  const el = document.querySelector('[data-sfct="check"] .sfct-check-el');
-  if (!el) return;
-  el.style.animation = 'none';
-  void el.offsetWidth; // restart Chess.com's own grow/wiggle/shrink
-  el.style.animation = '';
+  replayCheck();
 }
 
 // The four-piece column Chess.com pops over the promotion square. Queen first,
