@@ -433,3 +433,31 @@ describe('enPassantTarget', () => {
     expect(d.getFEN().split(' ')[3]).toBe('d6');
   });
 });
+
+// ── isGameOver: only a VISIBLE game-over surface counts ──────────────────────
+// Fair play depends entirely on this one predicate: it is what keeps the
+// trigger off a live board. A game-over node left mounted but hidden - after a
+// rematch, or rendered ahead of time - must not read as a finished game.
+describe('isGameOver visibility', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  const modal = (style) => {
+    const e = document.createElement('div');
+    e.className = 'game-over-modal-content';
+    if (style) e.setAttribute('style', style);
+    document.body.appendChild(e);
+    return e;
+  };
+
+  it('a visible modal still counts', () => { modal(); expect(d.isGameOver()).toBe(true); });
+  it('display:none does not count', () => { modal('display:none'); expect(d.isGameOver()).toBe(false); });
+  it('visibility:hidden does not count', () => { modal('visibility:hidden'); expect(d.isGameOver()).toBe(false); });
+  it('an ancestor-hidden modal does not count', () => {
+    const e = modal();
+    e.checkVisibility = () => false; // what a browser answers inside a hidden parent
+    expect(d.isGameOver()).toBe(false);
+  });
+  it('one hidden and one visible still counts', () => {
+    modal('display:none'); modal();
+    expect(d.isGameOver()).toBe(true);
+  });
+});
