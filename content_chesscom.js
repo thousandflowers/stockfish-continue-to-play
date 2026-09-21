@@ -129,6 +129,11 @@ function onEngineMessage({ data }) {
   if (data.startsWith('bestmove')) {
     const move = data.split(' ')[1];
     const uci = move && move !== '(none)' ? move : null;
+    // A real bestmove proves the side to move HAS one, so the position is
+    // neither mate nor stalemate and a draw can be claimed — before the engine
+    // plays a reply to a game that is already over.
+    const drawn = uci && drawReason(chesscomState);
+    if (drawn) { declareDraw(chesscomState, drawn); return; }
     const session = sessionId;
     const rest = Math.max(0, pacingTarget() - (Date.now() - _thinkStart));
     setTimeout(() => { if (session === sessionId) onEngineMove(uci); }, rest);
@@ -142,6 +147,10 @@ function onEngineMessage({ data }) {
       _legalMoves = _perftMoves || [];
       _perftMoves = null;
       if (_legalMoves.length === 0) { probeMate(chesscomState?.sideToMove); return; }
+      // Legal moves exist, so this is not mate or stalemate: any draw now
+      // standing is one of the quiet ones.
+      const drawn = drawReason(chesscomState);
+      if (drawn) { declareDraw(chesscomState, drawn); return; }
       if (chesscomState?.selectedSq) syncBoardToState();
       return;
     }
@@ -297,7 +306,8 @@ function showChesscomBoard(fen, color, strengthSetting) {
     hideChesscomBoard();
     removeGameOverModal();
 
-    const sideToMove = fen.split(' ')[1] || 'w';
+    const [, fenSide, fenCastling = '-', fenEp = '-', fenHalf = '0'] = fen.split(' ');
+    const sideToMove = fenSide || 'w';
     const playerSide = color === 'white' ? 'w' : 'b';
     const engineSide = playerSide === 'w' ? 'b' : 'w';
     const strength = engineStrength(strengthSetting);
@@ -315,7 +325,15 @@ function showChesscomBoard(fen, color, strengthSetting) {
       gamePaceMs: (averageMoveSeconds() || 0) * 1000,
       yourPaces: [],
       turnStart: Date.now(),
+      // Draw bookkeeping. The engine keeps its own copy of all of this, but it
+      // is only ever asked for legal moves, and a drawn position still has
+      // plenty of those — so the claim has to be made here.
+      castling: fenCastling, enPassant: fenEp,
+      halfmove: parseInt(fenHalf, 10) || 0,
+      seen: new Map(), repeats: 1,
     };
+    chesscomState.seen.set(
+      positionKey(chesscomState.boardData, sideToMove, fenCastling, fenEp), 1);
 
     injectBoardStyle();
     syncBoardToState();
@@ -673,6 +691,38 @@ function handleDragMove(from, to) {
   beginMove(from, to);
 }
 
+// Everything a draw claim needs, taken from the move that was just applied.
+// Called after boardData and sideToMove have been updated, so the key it builds
+// describes the position now on the board.
+function recordMove(st, moved) {
+  st.castling = castlingAfter(st.castling, moved);
+  st.enPassant = enPassantAfter(moved);
+  // The fifty-move count restarts on a capture or a pawn move, and only then.
+  const pawn = moved.piece === 'P' || moved.piece === 'p';
+  st.halfmove = (moved.capture || pawn) ? 0 : st.halfmove + 1;
+  const key = positionKey(st.boardData, st.sideToMove, st.castling, st.enPassant);
+  st.repeats = (st.seen.get(key) || 0) + 1;
+  st.seen.set(key, st.repeats);
+}
+
+// Why this position is drawn, or null. Only ever consulted where the side to
+// move is KNOWN to have a legal move: mate and stalemate outrank all of these,
+// and a game that ends in mate on the hundredth quiet move is mate, not a draw.
+function drawReason(st) {
+  if (!st) return null;
+  if (isInsufficientMaterial(st.boardData)) return 'neither side can force mate';
+  if (st.repeats >= 3) return 'by threefold repetition';
+  if (st.halfmove >= 100) return 'by the fifty-move rule';
+  return null;
+}
+
+// A position that was already drawn when it was picked gets the same treatment
+// as one that was already mate: say so, and do not offer to replay it.
+function declareDraw(st, reason) {
+  if (!st.moves.length) { endGame('Already a draw', reason, { rematch: false }); return; }
+  endGame('Draw', reason);
+}
+
 function makePlayerMove(from, to, promo) {
   const st = chesscomState;
   if (!st) return;
@@ -688,6 +738,7 @@ function makePlayerMove(from, to, promo) {
   st.moves.push(uci);
   st.selectedSq = null;
   st.sideToMove = st.engineSide;
+  recordMove(st, res.moved);
   syncBoardToState();
   postCmd(enginePosition());
   engineThink();
@@ -704,6 +755,7 @@ function onEngineMove(uci) {
   st.boardData = res.board;
   st.moves.push(uci);
   st.sideToMove = st.playerSide;
+  recordMove(st, res.moved);
   st.turnStart = Date.now();
   syncBoardToState();
   updateStatus('Your move');

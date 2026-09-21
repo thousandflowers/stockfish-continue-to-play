@@ -225,3 +225,77 @@ describe('parsePerftMove', () => {
     expect(c.parsePerftMove('')).toBeNull();
   });
 });
+
+// ── Draws ────────────────────────────────────────────────────────────────────
+// Everything below exists because a game here only ends when the side to move
+// has no legal move. Mate and stalemate do that; no other draw does, so a
+// continuation that reached a dead endgame used to run forever.
+describe('castlingAfter', () => {
+  it('a king move kills both of its own rights and neither of the enemy’s', () => {
+    expect(c.castlingAfter('KQkq', { from: 'e1', to: 'e2', piece: 'K' })).toBe('kq');
+    expect(c.castlingAfter('KQkq', { from: 'e8', to: 'e7', piece: 'k' })).toBe('KQ');
+  });
+  it('a rook leaving home kills that side only', () => {
+    expect(c.castlingAfter('KQkq', { from: 'h1', to: 'h5', piece: 'R' })).toBe('Qkq');
+    expect(c.castlingAfter('KQkq', { from: 'a8', to: 'a5', piece: 'r' })).toBe('KQk');
+  });
+  it('capturing on a rook’s home square kills that right', () => {
+    expect(c.castlingAfter('KQkq', { from: 'a1', to: 'a8', piece: 'R' })).toBe('Kk');
+  });
+  it('castling itself leaves nothing for that colour', () => {
+    expect(c.castlingAfter('KQkq', { from: 'e1', to: 'g1', piece: 'K' })).toBe('kq');
+  });
+  it('a dash stays a dash', () => {
+    expect(c.castlingAfter('-', { from: 'e2', to: 'e4', piece: 'P' })).toBe('-');
+  });
+});
+
+describe('enPassantAfter', () => {
+  it('a double push exposes the square it stepped over', () => {
+    expect(c.enPassantAfter({ piece: 'P', from: 'e2', to: 'e4' })).toBe('e3');
+    expect(c.enPassantAfter({ piece: 'p', from: 'd7', to: 'd5' })).toBe('d6');
+  });
+  it('a single push exposes nothing', () => {
+    expect(c.enPassantAfter({ piece: 'P', from: 'e3', to: 'e4' })).toBe('-');
+  });
+  it('a piece moving two ranks is not a pawn push', () => {
+    expect(c.enPassantAfter({ piece: 'R', from: 'e2', to: 'e4' })).toBe('-');
+  });
+});
+
+describe('positionKey', () => {
+  const board = { e1: 'K', e8: 'k' };
+  it('the same placement with different rights is a different position', () => {
+    expect(c.positionKey(board, 'w', 'KQ', '-')).not.toBe(c.positionKey(board, 'w', '-', '-'));
+  });
+  it('the same placement with the other side to move is a different position', () => {
+    expect(c.positionKey(board, 'w', '-', '-')).not.toBe(c.positionKey(board, 'b', '-', '-'));
+  });
+  it('an en-passant square makes it a different position', () => {
+    expect(c.positionKey(board, 'w', '-', 'e3')).not.toBe(c.positionKey(board, 'w', '-', '-'));
+  });
+  it('key order does not depend on how the map was built', () => {
+    expect(c.positionKey({ e8: 'k', e1: 'K' }, 'w', '-', '-')).toBe(c.positionKey(board, 'w', '-', '-'));
+  });
+});
+
+describe('isInsufficientMaterial', () => {
+  it('bare kings', () => { expect(c.isInsufficientMaterial({ e1: 'K', e8: 'k' })).toBe(true); });
+  it('king and one bishop', () => { expect(c.isInsufficientMaterial({ e1: 'K', c1: 'B', e8: 'k' })).toBe(true); });
+  it('king and one knight', () => { expect(c.isInsufficientMaterial({ e1: 'K', b1: 'N', e8: 'k' })).toBe(true); });
+  it('opposite bishops on the same colour cannot mate', () => {
+    // c1 and f8 are both dark squares
+    expect(c.isInsufficientMaterial({ e1: 'K', c1: 'B', e8: 'k', f8: 'b' })).toBe(true);
+  });
+  it('bishops on opposite colours can still mate', () => {
+    // c1 dark, c8 light
+    expect(c.isInsufficientMaterial({ e1: 'K', c1: 'B', e8: 'k', c8: 'b' })).toBe(false);
+  });
+  it('a single pawn is enough', () => {
+    expect(c.isInsufficientMaterial({ e1: 'K', a2: 'P', e8: 'k' })).toBe(false);
+  });
+  it('a rook is enough', () => { expect(c.isInsufficientMaterial({ e1: 'K', a1: 'R', e8: 'k' })).toBe(false); });
+  it('two knights are not an automatic draw', () => {
+    expect(c.isInsufficientMaterial({ e1: 'K', b1: 'N', g1: 'N', e8: 'k' })).toBe(false);
+  });
+});
