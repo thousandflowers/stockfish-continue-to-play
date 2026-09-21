@@ -17,6 +17,14 @@ to the release its zips were published under.
 - **A "who is to move?" prompt** for the rare position whose side to move cannot
   be established. Starting the wrong side is only visible once the engine moves
   a piece it should not have been able to touch, so it asks instead of guessing.
+- **Continued games can end in a draw.** A game here ended when the side to move
+  ran out of legal moves, which is checkmate and stalemate and nothing else.
+  Every other draw leaves legal moves on the board, so a continuation that
+  reached two bare kings simply carried on until you closed it. The fifty-move
+  rule, threefold repetition and insufficient material are now decided from the
+  move list, and only ever where the side to move is known to have a legal move
+  - mate outranks every draw, and a game that ends in mate on the hundredth
+  quiet move is mate.
 
 ### Changed
 
@@ -33,6 +41,20 @@ to the release its zips were published under.
 
 ### Fixed
 
+- **No more queen nobody chose.** Two paths turned a promotion into a queen
+  without asking: a `'q'` default in `toUci()`, and a fallback in the picker for
+  when there was no board to hang it off. A promotion with nothing chosen is now
+  not a move at all, and you are asked again.
+- **You can see the legal-move markers, including on captures.** The dot was
+  flat 18% black, which disappears on Chess.com's dark squares, and it sat
+  BEHIND the pieces - so a capture destination, the one you most want to see,
+  was covered by the piece standing on it. Markers now sit above the pieces,
+  carry a pale rim so they read on light and dark squares alike, and a square
+  with a piece on it gets a ring around the piece instead of a dot under it.
+- **A king-versus-king ending can be continued.** The scraper rejected anything
+  with fewer than three pieces as noise, so the most obviously drawn position on
+  the board answered "Position not found." The guard is now that both kings are
+  present, which is what actually tells a position from a stray match.
 - **Captures en passant are possible again.** The scraped FEN carried a hardcoded
   "-" in the en-passant field, so Stockfish never generated the capture and the
   move came back refused. The two squares Chess.com highlights for the last move

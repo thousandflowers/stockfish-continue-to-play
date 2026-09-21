@@ -2,8 +2,8 @@
 
 ## How it works
 
-1. **Detect game over** - a content script on Chess.com watches for the game-over modal and injects a **Continue vs Computer** button next to Rematch / New Game.
-2. **Capture the position** - on click it reads the final FEN and the player's colour from the page, and the opponent's rating to pick a difficulty.
+1. **Detect game over** - a content script on Chess.com watches for a *visible* game-over surface and injects a **Continue vs Computer** button: docked under the result card when there is one, under the move-list column when there is not.
+2. **Capture the position** - on click it reads the FEN of the position currently ON the board, which is the one you are looking at after walking back through the move list, plus the player's colour and the opponent's rating to pick a difficulty.
 3. **Play inline** - it hides the game-over modal and renders the position on the existing Chess.com board. Stockfish runs in a Web Worker; you move by click or drag, the engine replies.
 
 There is no redirect and no backend: Stockfish runs in your browser as WebAssembly, in a Web Worker, and nothing is uploaded.
@@ -18,11 +18,31 @@ a list of **UCI moves** and sends:
 position fen <startFen> moves <m1> <m2> …
 ```
 
-Stockfish then tracks castling rights, en-passant, the 50-move rule and threefold
-repetition natively. Legal moves for the side to move are obtained from the engine with
-`go perft 1`; when that returns zero moves the game has ended (checkmate or stalemate)
-and the overlay closes with a result banner. A local board map is kept only for
-rendering and is updated immutably (`applyUciMove` returns a new board).
+Stockfish then tracks castling rights and en-passant natively when it generates moves.
+Legal moves for the side to move are obtained with `go perft 1`; when that returns zero
+moves the game has ended in checkmate or stalemate, and `probeMate()` tells the two
+apart by searching the position - Stockfish scores a mated side `mate 0` and a
+stalemated one `cp 0`. A local board map is kept for rendering and is updated immutably
+(`applyUciMove` returns a new board).
+
+## The draws the engine is never asked about
+
+Running out of legal moves covers checkmate and stalemate. It covers nothing else: the
+fifty-move rule, threefold repetition and insufficient material all leave legal moves on
+the board, so a game that reached one of them used to run forever. Stockfish knows about
+all three, but it is only ever asked what the legal moves ARE.
+
+So they are decided here, from the same move list, by four pure helpers in
+`chess-core.js`: `castlingAfter()` and `enPassantAfter()` keep the rights exact (unlike
+the starting rights, which are scraped), `positionKey()` folds placement, side to move
+and both rights into a repetition key, and `isInsufficientMaterial()` covers bare kings,
+a king and one minor piece, and two bishops on one square colour. Two knights are
+deliberately not a draw - mate with them is possible, only not forced.
+
+The claim is only ever made where the side to move is KNOWN to have a legal move: a real
+`bestmove`, or a `perft` that came back non-empty. That ordering is the rule itself -
+mate outranks every draw, and a game that ends in mate on the hundredth quiet move is
+mate.
 
 ## Difficulty mapping
 
@@ -42,6 +62,18 @@ Tried in order; the first that yields a position wins:
 
 Source 1 carries real castling/en-passant data, so it wins over the scraped placement.
 
+For a scraped position the en-passant field is **not** left blank: the two squares
+Chess.com highlights for the last move give the target exactly, since a double pawn push
+is the only move whose highlighted squares sit on one file two ranks apart with a pawn
+on the destination. Without it Stockfish never generates the capture and the move comes
+back refused, which reads as a bug rather than as a rule. Switch Chess.com's move
+highlighting off and there is nothing to read, and the field is `-` again.
+
+Castling rights stay the home-square heuristic, which can only ever over-grant, never
+withhold - it will not take a castle away from you. The two counters stay `0 1`: a
+continuation is a new game from this position, so counting its fifty-move rule from zero
+is right rather than approximate.
+
 **What actually runs on chess.com today is source 2.** A probe run against live
 chess.com pages (a finished game and `/play/computer`, extension loaded) showed the
 board element carries only `class`, `id` and `style` - no FEN attribute. Earlier
@@ -53,14 +85,34 @@ until the first move, after which Stockfish tracks them from the move list.
 
 ## Side to move
 
-Only needed when the position is scraped (the usual case). Chess.com renders one
-node per ply, tagged with the colour that played it (`node white-move main-line-ply`
-/ `node black-move …`), so `getTurnFromMoveList()` reads the **last** ply node. The
-previous parity count over `[data-whole-move-number]` was wrong by construction -
-that attribute marks move *pairs*, so a live board reported "black to move" both
-after `1. e4` and after `1… e5`. When there is no move list, the board's last-move
-highlight squares are used: whichever colour's piece stands on one of them just
-moved, so the other side is up.
+Only needed when the position is scraped (the usual case), and the hardest thing on the
+page to be sure about - because the placement follows the move list while a naive turn
+reading does not. Get it wrong and the game starts with the wrong player up, which you
+only notice once the engine moves a piece it should not have been able to touch.
+
+`readSideToMove()` takes three independent readings:
+
+1. the **index** of the selected ply among all ply nodes - ply 1 is White's, so the
+   parity gives the turn. This needs only that the nodes are enumerable and one is
+   marked, so it survives a rename of `white-move` / `black-move`.
+2. the **colour class** on that node, which is what this used to read on its own.
+3. the board's **last-move highlight** - whichever colour's piece stands on a
+   highlighted square just moved, so the other side is up. It follows the position
+   being shown, so it stays right while you navigate.
+
+`selected` is matched as a whole class token, never inside a compound: a node classed
+`de-selected` would otherwise anchor both list readings on the wrong ply, where they
+agree with each other and the board is never consulted. Exactly one ply may claim the
+selection. When nothing is marked the board wins over the end of the list, and only when
+the board is silent too does the end of the list decide - which is right whenever the
+position shown is the final one, the only case that can reach there.
+
+When the readings cannot be reconciled the function returns `null` and the player is
+**asked**, with a White / Black card. One question beats a game that is quietly wrong.
+
+A parity count over `[data-whole-move-number]` was tried and is wrong by construction -
+that attribute marks move *pairs*, so a live board reported "black to move" both after
+`1. e4` and after `1… e5`.
 
 ## Opponent rating
 
