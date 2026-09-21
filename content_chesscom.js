@@ -296,22 +296,22 @@ function injectBoardStyle() {
     // stop hands the board straight back instead of leaving it blank.
     'wc-chess-board [class*="piece"]:not([data-sfct]),chess-board [class*="piece"]:not([data-sfct]){display:none!important}',
     '[data-sfct="piece"]{transition:transform var(--move-animation-duration,180ms) ease-out}',
-    // The king in check. Chess.com draws this with a VFX layer whose artwork we
-    // cannot borrow, but its motion is plain CSS and is copied here exactly:
-    // grow 50ms, wiggle 200ms five times, shrink 250ms on their easing. The red
-    // is their own radial glow. The scale/rotate live on an inner element so
-    // they cannot fight the translate that puts the marker on its square.
+    // The king in check. Chess.com draws this with a VFX layer whose artwork is
+    // not reachable from a class, so this is their red radial glow instead.
+    //
+    // Their motion is NOT copied wholesale any more. The ±4° wiggle is theirs,
+    // but it is theirs for an ICON: rotating a square div full of a gradient
+    // just swings its corners through the fade, which read as a rotating
+    // rectangle rather than a glow. The element is clipped to a circle so it has
+    // no corners to show, and the motion is the pulse alone — grow on their
+    // 50ms, settle on their easing.
     '[data-sfct="check"]{pointer-events:none}',
-    '.sfct-check-el{width:100%;height:100%;' +
-      'background:radial-gradient(ellipse at center,rgba(255,0,0,.9) 0%,rgba(231,0,0,.8) 25%,rgba(169,0,0,0) 89%);' +
+    '.sfct-check-el{width:100%;height:100%;border-radius:50%;' +
+      'background:radial-gradient(circle at center,rgba(255,0,0,.92) 0%,rgba(231,0,0,.78) 28%,rgba(169,0,0,0) 72%);' +
       'animation:_sfctgrow 50ms linear 0s 1 normal forwards,' +
-      '_sfctwiggle .2s linear 50ms 5 normal forwards,' +
-      '_sfctshrink .25s cubic-bezier(.16,1,.3,1) 1.05s 1 normal forwards}',
-    '@keyframes _sfctgrow{0%{transform:scale(1)}100%{transform:scale(1.1)}}',
-    '@keyframes _sfctwiggle{0%{transform:scale(1.1) rotate(0deg)}25%{transform:scale(1.1) rotate(-4deg)}' +
-      '50%{transform:scale(1.1) rotate(0deg)}75%{transform:scale(1.1) rotate(4deg)}' +
-      '100%{transform:scale(1.1) rotate(0deg)}}',
-    '@keyframes _sfctshrink{0%{transform:scale(1.1)}100%{transform:scale(1)}}',
+      '_sfctshrink .25s cubic-bezier(.16,1,.3,1) .35s 1 normal forwards}',
+    '@keyframes _sfctgrow{0%{transform:scale(.86)}100%{transform:scale(1.12)}}',
+    '@keyframes _sfctshrink{0%{transform:scale(1.12)}100%{transform:scale(1)}}',
   ].join('');
   document.head.appendChild(bs);
 }
