@@ -8,7 +8,7 @@
 
 ![The extension taking over a finished Chess.com game and playing it out against Stockfish](docs/demo.gif)
 
-<sub>A real game ends, "Continue vs Computer" appears, and the same board keeps going against Stockfish - no redirect, no new tab. Recorded at 2x.</sub>
+<sub>A real Chess.com game, reopened one move before the end: "Keep Playing" sits under the move list, the same board keeps going against Stockfish, and the mate lands on Chess.com's own result card - no redirect, no new tab. Recorded on chess.com with the released 3.3.0.</sub>
 
 ---
 
