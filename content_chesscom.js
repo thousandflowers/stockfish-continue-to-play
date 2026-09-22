@@ -609,12 +609,17 @@ function highlightPaint(board) {
   return paint;
 }
 
+// Our pieces stand above the selection (2) and the check mark (3), below the
+// legal-move dots (6). Their `piece` class computes z-index auto on a live
+// board, so this inline value is the only thing holding the piece up.
+const PIECE_Z = '5';
+
 function makePieceNode(pc) {
   const el = document.createElement('div');
   el.setAttribute('data-sfct', 'piece');
   el.dataset.pc = pc;
   el.className = `piece ${pc === pc.toUpperCase() ? 'w' : 'b'}${pc.toLowerCase()}`;
-  el.style.cssText = 'position:absolute;top:0;left:0;width:12.5%;height:12.5%;z-index:5';
+  el.style.cssText = 'position:absolute;top:0;left:0;width:12.5%;height:12.5%;z-index:' + PIECE_Z;
   return el;
 }
 
@@ -827,12 +832,11 @@ function attachPointerHandlers() {
     if (!dragMoved) {
       dragMoved = true;
       dragEl.dataset.sfctDrag = '1';
-      // Above every other piece, and it has to be said this loudly. Our pieces
-      // wear Chess.com's own `piece` class to borrow its sprite, and their rule
-      // for it computes z-index 5 - measured on a live board, on the carried
-      // piece itself, while a stylesheet rule of ours said 9 and lost. With the
-      // z-index equal, DOM order decides, and the piece being carried was the
-      // 50th of 64: the fourteen after it painted straight over it.
+      // Above every other piece, and it has to be said this loudly. Every piece
+      // of ours carries z-index 5 inline (PIECE_Z), which a stylesheet rule of
+      // ours said 9 against and lost. With the z-index equal, DOM order decides,
+      // and the piece being carried was the 50th of 64: the fourteen after it
+      // painted straight over it.
       dragEl.style.setProperty('z-index', '20', 'important');
     }
     dragEl.style.transform = `${dragEl.dataset.sfctBase} translate(${dx}px,${dy}px)`;
@@ -851,7 +855,9 @@ function attachPointerHandlers() {
   const dropPiece = () => {
     if (dragEl) {
       dragEl.style.transform = dragEl.dataset.sfctBase || dragEl.style.transform;
-      dragEl.style.removeProperty('z-index');
+      // Back to PIECE_Z, never removed: without it the piece computes auto and
+      // the selected square's highlight paints over the piece standing on it.
+      dragEl.style.setProperty('z-index', PIECE_Z);
       delete dragEl.dataset.sfctBase;
       delete dragEl.dataset.sfctDrag;
     }

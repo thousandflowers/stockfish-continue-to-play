@@ -184,6 +184,20 @@ if ((await overlaySquares()).join() !== after.join()) fail('a click while lookin
 if (await page.locator('#board [data-sfct="sel"]').count()) fail('that click also selected a piece');
 console.log('PASS 7b: ←/→/↑/↓ walk the continuation, a click returns to the present');
 
+// 7c. A clicked piece stays above its own selected square. The release used to
+// strip the piece's z-index, leaving it at auto under the highlight's 2.
+const e1 = sq(5, 1); // the king: e4's pawn may be blocked, and a piece with no moves is refused
+await page.mouse.move(e1.x, e1.y); await page.mouse.down(); await page.mouse.up();
+const stacking = await page.evaluate(() => {
+  const sel = document.querySelector('#board [data-sfct="sel"]');
+  const pc = sel && [...document.querySelectorAll('#board [data-sfct="piece"]')].find(e => e.dataset.sq === sel.dataset.sq);
+  return pc ? [getComputedStyle(pc).zIndex, getComputedStyle(sel).zIndex] : null;
+});
+if (!stacking) fail('clicking the e1 king did not select it');
+if (!(Number(stacking[0]) > Number(stacking[1]))) fail(`the selected square paints over its piece: piece z=${stacking[0]}, square z=${stacking[1]}`);
+await page.mouse.move(e1.x, e1.y); await page.mouse.down(); await page.mouse.up(); // deselect
+console.log(`PASS 7c: selected piece stays above its square (z ${stacking[0]} over ${stacking[1]})`);
+
 // 8. stopping restores the board (no leftover overlay)
 await stop();
 await page.waitForTimeout(300);
