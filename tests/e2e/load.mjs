@@ -307,8 +307,20 @@ if (!/radial-gradient/.test(checkMark[0].bg)) fail('check mark is not painted: '
 if (!/_sfctgrow/.test(checkMark[0].anim)) fail('check mark is not animated: ' + checkMark[0].anim);
 console.log('PASS 12b: checked king marked red on', checkMark[0].sq, '- animation', checkMark[0].anim);
 
-// 13. …and leaving hands the board back
-await page.getByRole('button', { name: 'Back to Chess.com' }).click();
+// 12c. The card is their v6 modal, copied: their glyphs on our buttons, their
+// close cross, and nothing of ours added to it - no note, no stray box.
+const shape = await page.$eval('#sfct-result', c => ({
+  v6: !!c.querySelector('.game-over-modal-shell-v6 .game-over-modal-header-is-v6-modal-enabled'),
+  glyphs: [...c.querySelectorAll('svg[data-glyph]')].map(s => s.dataset.glyph).join(),
+  note: !!c.querySelector('[data-sfct="card-note"]'),
+  ad: !!c.querySelector('[class*="ad-"]'),
+}));
+if (!shape.v6 || shape.glyphs !== 'mark-cross,arrow-spin-redo,arrow-chevron-left' || shape.note || shape.ad)
+  fail('the result card is not their v6 modal: ' + JSON.stringify(shape));
+console.log('PASS 12c: the result card is their v6 modal -', shape.glyphs);
+
+// 13. …and leaving hands the board back - by their close cross, as on their modal
+await page.getByRole('button', { name: 'Close' }).click();
 await page.waitForTimeout(500);
 if (await page.locator('[data-sfct]').count() !== 0) fail('overlay left behind after closing the result');
 const handedBack = await page.$$eval('#board [class*="piece"]:not([data-sfct])',

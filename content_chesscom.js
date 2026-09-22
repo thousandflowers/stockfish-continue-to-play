@@ -1175,88 +1175,99 @@ function centreOnBoard(el) {
   el.style.transform = 'translate(-50%,-50%)';
 }
 
-// A full-width button in Chess.com's dialog style.
-// Their own button, worn rather than imitated. Measured on a live page: a button
-// of ours carrying cc-button-component computes to "Chess Sans" 17px/600 at
-// radius 10, with their green and the shadow that goes under it - the same
-// values their modal's own buttons carry. A class also follows their restyles
-// and their theme for free, which a copied hex value never does.
-function cardButton(text, primary) {
+// Chess.com's own glyphs, copied off their live pages (svg[data-glyph]) - the
+// ↻ beside their New Game button, their back chevron, the modal's close cross.
+const GLYPHS = {
+  'arrow-spin-redo': 'm11 22.47c-6.07 0-10.5-4.87-10.5-10.47 0-5.93 4.8-10.5 10.5-10.5 2.7 0 5.37 1.03 7.43 3.07l1.47 1.47-2.13 2.13-1.47-1.47c-1.47-1.47-3.4-2.2-5.3-2.2-4.13 0-7.5 3.37-7.5 7.5s3.37 7.5 7.5 7.5c2.57 0 4.53-1.17 6.03-3 .6-.83 1.17-.93 2.03-.37l.1.1c.87.57.97 1.13.37 1.97-2.1 2.63-4.9 4.27-8.53 4.27zm11.43-17.44.63 5.13c.13 1.03-.23 1.4-1.27 1.27l-5.17-.63c-.9-.1-1.03-.57-.4-1.2l5-5c.63-.63 1.1-.5 1.2.43zm0 0',
+  'arrow-chevron-left': 'm16.27 21.13-.07.07c-1.13 1.13-1.6 1.13-2.73 0l-6.4-6.37c-1.73-1.77-1.73-3.9 0-5.67l6.4-6.37c1.13-1.13 1.6-1.13 2.73 0l.07.07c1.13 1.13 1.13 1.6 0 2.73l-6.37 6.4 6.37 6.4c1.13 1.13 1.13 1.6 0 2.73zm0 0',
+  'mark-cross': 'm6.1 20.77c-1.13 1.13-1.6 1.13-2.73 0l-.13-.13c-1.13-1.13-1.13-1.6 0-2.73l5.97-5.9-5.97-6c-1.13-1.13-1.13-1.6 0-2.73l.13-.1c1.13-1.13 1.6-1.13 2.73 0l5.93 6 5.93-5.97c1.13-1.13 1.6-1.13 2.73 0l.13.13c1.13 1.13 1.13 1.6 0 2.73l-5.97 5.93 5.8 5.9c1.13 1.13 1.13 1.6 0 2.73l-.1.13c-1.13 1.13-1.6 1.13-2.73 0l-5.8-5.93zm0 0',
+};
+
+function glyph(name, size) {
+  const span = document.createElement('span');
+  span.setAttribute('aria-hidden', 'true');
+  span.className = `cc-icon-glyph_57606db cc-icon-size-${size}_57606db`;
+  span.innerHTML = '<svg data-glyph="' + name + '" aria-hidden="true" viewBox="0 0 24 24" ' +
+    'xmlns="http://www.w3.org/2000/svg"><path d="' + GLYPHS[name] + '"></path></svg>';
+  return span;
+}
+
+// Their button, not an imitation: the classes their v6 game-over modal uses,
+// measured off a live page - cc-button-x-large for the one green call to action,
+// with a 24px glyph in front of the words. Secondary buttons are the same shape
+// in their dark secondary paint.
+function cardButton(text, primary, glyphName) {
   const b = document.createElement('button');
-  b.textContent = text;
-  // cc-button-MEDIUM, because that is the size their own game-over modal uses:
-  // measured on their Rematch button - 14px/600 at radius 5, 40px tall, and a
-  // transparent background whose fill arrives as an inset box-shadow. Large
-  // would have been "Chess Sans" at 17px and radius 10, which is their button
-  // but not the one that belongs in this card.
-  b.className = 'cc-button-component cc-button-medium ' +
+  // game-over-primary-cta-… is where their modal's 16px side inset comes from.
+  b.className = 'cc-button-component cc-button-x-large game-over-primary-cta-game-over-primary-cta ' +
     (primary ? 'cc-button-primary cc-bg-primary' : 'cc-button-secondary cc-bg-secondary');
-  b.dataset.sfctPrimary = primary ? '1' : '0';
-  b.style.width = '100%';
-  b.style.cursor = 'pointer';
+  b.setAttribute('data-sfct', 'card-part');
+  if (glyphName) {
+    const icon = glyph(glyphName, 24);
+    icon.classList.add('cc-button-icon');
+    b.appendChild(icon);
+  }
+  b.append(' ' + text);
   return b;
 }
 
-// The dark card Chess.com announces things with: heading, subtitle, then a
-// column of buttons. Only built when there was no modal of theirs to clone.
+// A copy of their v6 game-over modal, node for node. Built rather than cloned off
+// the live one (see showResultModal). Every class below was read off a live page:
+//
+//   div.game-over-modal-shell-container
+//     div.game-over-modal-shell-content.game-over-modal-shell-v6
+//       div.game-over-modal-header-component …-extraSpace …-is-v6-modal-enabled
+//         div.game-over-modal-header-inner > div.game-over-modal-header-header
+//           div.game-over-modal-title-component …-title-is-v6-modal-enabled
+//           div.game-over-modal-subtitle-component …-subtitle-v6
+//             div.game-over-modal-subtitle-first-line
+//         button.cc-close-button-component … .game-over-modal-header-close
+//       div.game-over-modal-shell-buttons
+//
+// It stays a child of <body> and never enters their component tree: inserting a
+// node of ours into one of their Vue components took the whole board down once.
+// Every node is marked as ours - the rule that hides their modal while we play
+// narrows on that attribute, and marking only the root hid the card's insides.
 function makeCard(title, subtitle) {
   ensureAnimStyle();
-
-  // Their announcement modal, built out of their own class names. They are
-  // global and unscoped, and that was measured rather than hoped for: a node of
-  // ours parked in <body> wearing them computed to exactly what their own modal
-  // computes to - rgb(38,36,33) at radius 10 for the body, rgba(255,255,255,.1)
-  // for the header, "Chess Sans" 22px/700 for the title.
-  //
-  // It stays a child of <body> and never enters their component tree. Inserting
-  // a node of ours into one of their Vue components is what took the whole board
-  // down once already; wearing their clothes costs nothing and breaks nothing.
-  //
-  // Their shell is position:static, so it does not fight the fixed placement,
-  // which stays ours - the card is centred on the board, not where their layout
-  // would have put it.
-  const card = document.createElement('div');
+  const el = (cls, parent) => {
+    const n = document.createElement('div');
+    n.className = cls;
+    n.setAttribute('data-sfct', 'card-part');
+    parent?.appendChild(n);
+    return n;
+  };
+  const card = el('game-over-modal-shell-container');
   card.id = 'sfct-result';
   card.setAttribute('data-sfct', 'result');
-  card.className = 'game-over-modal-shell-container';
   Object.assign(card.style, {
-    position: 'fixed', zIndex: '999998', maxWidth: '92vw',
+    // 400px is their modal's width on a live desktop page; it gets it from the
+    // layout around it, which a card parked in <body> does not have.
+    position: 'fixed', zIndex: '999998', width: '400px', maxWidth: '92vw',
     animation: '_sfctpop .18s ease-out',
   });
-
-  // Every node here is marked as ours, not just the outer card. They all wear
-  // their class names, and the rule that hides their modal narrows on this
-  // attribute - mark only the card and the blocker hides its insides instead,
-  // which is a card of full width and no height at all. The e2e run measured
-  // exactly that before this line existed.
-  const content = document.createElement('div');
-  content.className = 'game-over-modal-shell-content';
-  content.setAttribute('data-sfct', 'card-body');
-
-  const head = document.createElement('div');
-  head.className = 'game-over-modal-header-component';
-  head.setAttribute('data-sfct', 'card-head');
-  const inner = document.createElement('div');
-  inner.className = 'game-over-modal-header-inner';
-  inner.setAttribute('data-sfct', 'card-head-inner');
-  const h = document.createElement('div');
-  h.className = 'game-over-modal-title-component';
-  h.setAttribute('data-sfct', 'card-title');
-  h.textContent = title;
-  const sub = document.createElement('div');
-  sub.className = 'game-over-modal-subtitle-component';
-  sub.setAttribute('data-sfct', 'card-subtitle');
-  sub.textContent = subtitle;
-  inner.append(h, sub);
-  head.appendChild(inner);
-
-  const body = document.createElement('div');
-  body.className = 'game-over-modal-shell-buttons';
-  body.setAttribute('data-sfct', 'card-buttons');
-
-  content.append(head, body);
-  card.appendChild(content);
-  return { card, body, content };
+  const content = el('game-over-modal-shell-content game-over-modal-shell-v6', card);
+  const head = el('game-over-modal-header-component game-over-modal-header-extraSpace ' +
+    'game-over-modal-header-is-v6-modal-enabled', content);
+  const header = el('game-over-modal-header-header', el('game-over-modal-header-inner', head));
+  el('game-over-modal-title-component game-over-modal-title-is-v6-modal-enabled', header).textContent = title;
+  if (subtitle) {
+    const sub = el('game-over-modal-subtitle-component game-over-modal-subtitle-v6', header);
+    el('game-over-modal-subtitle-first-line', sub).textContent = subtitle;
+  }
+  const close = document.createElement('button');
+  close.setAttribute('aria-label', 'Close');
+  close.setAttribute('data-sfct', 'card-part');
+  close.className = 'cc-close-button-component cc-close-button-medium cc-close-button-subtle ' +
+    'cc-transition-color-hover game-over-modal-header-close';
+  el('cc-close-button-bg', close);
+  const x = glyph('mark-cross', 16);
+  x.classList.add('cc-close-button-icon');
+  close.appendChild(x);
+  close.onclick = dismissResult;
+  head.appendChild(close);
+  const body = el('game-over-modal-shell-buttons', content);
+  return { card, body };
 }
 
 // Put a card on screen, centred on the board and staying there.
@@ -1272,137 +1283,22 @@ function showCard(card) {
   };
 }
 
-// ── Their result card, borrowed ──────────────────────────────────────────────
-// Dressing our own box in their class names got close and stayed wrong, because
-// the structure was still ours. So the card IS theirs: taken off the page with
-// cloneNode while their modal is still mounted, then retexted and rewired.
-//
-// Capture has to happen BEFORE the continuation starts. showChesscomBoard() hides
-// their modal with a stylesheet and their own code unmounts it shortly after, so
-// by the time a result is needed there is nothing left to copy.
-let _modalTemplate = null;
-
-function captureModalTemplate() {
-  const modal = findGameOverModal();
-  if (modal) _modalTemplate = modal.cloneNode(true);
-}
-
-// The deepest element that carries text, so a wrapper is never overwritten - the
-// same leaf rule the opponent row is written by, for the same reason.
-function setDeepText(el, text) {
-  if (!el) return false;
-  const leaf = el.children.length
-    ? [...el.querySelectorAll('*')].find(n => n.children.length === 0)
-    : el;
-  (leaf || el).textContent = text;
-  return true;
-}
-
-function cloneResultCard(title, subtitle, opts) {
-  if (!_modalTemplate) return null;
-  const card = _modalTemplate.cloneNode(true); // cloned again: a rematch shows it twice
-
-  // A cloned CUSTOM ELEMENT is upgraded the moment it re-enters the document, and
-  // its constructor then runs against Chess.com's own state. Anything with a dash
-  // in its tag goes, and so does anything that could execute or load.
-  for (const el of [...card.querySelectorAll('*')]) {
-    if (el.tagName.includes('-') || el.tagName === 'SCRIPT' || el.tagName === 'IFRAME') el.remove();
-  }
-  // Their ids would now exist twice on the page, and both sides would be confused
-  // about which is which.
-  for (const el of [...card.querySelectorAll('[id]')]) el.removeAttribute('id');
-  card.removeAttribute('id');
-
-  // Every node marked as ours, not just the root: the rule that hides their modal
-  // while we play keys off this attribute, and marking only the root once left a
-  // card of full width and no height at all.
-  card.setAttribute('data-sfct', 'result');
-  for (const el of card.querySelectorAll('*')) el.setAttribute('data-sfct', 'card-part');
-  card.id = 'sfct-result';
-
-  // A card that cannot say WHY the game ended is worse than one of ours that can.
-  // Not every surface matching their modal selectors carries a title - a finished
-  // game reopened later matches a container that has none - so this is where the
-  // borrowing gives up and the hand-built card takes over.
-  if (!setDeepText(card.querySelector('[class*="title"]'), title)) return null;
-  const sub = card.querySelector('[class*="subtitle"]');
-  if (sub) setDeepText(sub, subtitle || '');
-
-  const isClose = (el) => /close/i.test(String(el.className) + ' ' + (el.getAttribute('aria-label') || ''));
-  const all = [...card.querySelectorAll('button, a[role="button"], a')];
-  for (const el of all) el.removeAttribute('href'); // a cloned link would navigate
-  card.querySelectorAll('[class*="close"]').forEach(x => { x.onclick = dismissResult; });
-
-  const actions = all.filter(b => !isClose(b));
-  if (!actions.length) return null; // nothing of theirs to speak with
-  const replayable = opts?.rematch !== false;
-  const wanted = replayable
-    ? [['Play again vs Stockfish', rematch], ['Back to Chess.com', dismissResult]]
-    : [['Back to Chess.com', dismissResult]];
-  // Their card does not always carry as many buttons as we need to offer - a
-  // finished game reopened later shows one where a game just ended shows two. One
-  // of theirs is duplicated rather than a button of ours being invented, so the
-  // second one is their button in every respect but its words.
-  while (actions.length < wanted.length) {
-    const last = actions[actions.length - 1];
-    const copy = last.cloneNode(true);
-    copy.removeAttribute('id');
-    copy.setAttribute('data-sfct', 'card-part');
-    for (const el of copy.querySelectorAll('*')) { el.removeAttribute('id'); el.setAttribute('data-sfct', 'card-part'); }
-    last.parentElement.appendChild(copy);
-    actions.push(copy);
-  }
-  actions.forEach((btn, i) => {
-    const want = wanted[i];
-    // Their extra buttons - New Game, Game Review - would navigate away or lie
-    // about a game Chess.com never played. They go.
-    if (!want) { btn.remove(); return; }
-    setDeepText(btn, want[0]);
-    btn.onclick = want[1];
-    btn.removeAttribute('aria-label');
-  });
-
-  Object.assign(card.style, {
-    position: 'fixed', zIndex: '999998', maxWidth: '92vw',
-    animation: '_sfctpop .18s ease-out',
-  });
-  return card;
-}
-
 function showResultModal(title, subtitle, opts) {
   const old = document.getElementById('sfct-result');
   old?._sfctCleanup?.(); // never orphan its resize/scroll listeners
   old?.remove();
-  const theirs = cloneResultCard(title, subtitle, opts);
-  if (theirs) { showCard(theirs); return; }
-
-  // No modal was on the page to copy - a finished game reopened later, where
-  // theirs was dismissed long ago. The hand-built card stands in.
-  const { card, body, content } = makeCard(title, subtitle || '');
-  const replayable = opts?.rematch !== false;
-  if (replayable) {
-    const again = cardButton('Play again vs Stockfish', true);
+  // Always the copy of their modal, never a clone of the live one: a clone
+  // carried their Game Review star onto our button and their empty ad box
+  // (game-over-ad-sidecar, 300x282) beside the card.
+  const { card, body } = makeCard(title, subtitle || '');
+  if (opts?.rematch !== false) {
+    const again = cardButton('Play again vs Stockfish', true, 'arrow-spin-redo');
     again.onclick = rematch;
     body.appendChild(again);
   }
-  const back = cardButton('Back to Chess.com', false);
+  const back = cardButton('Back to Chess.com', false, 'arrow-chevron-left');
   back.onclick = dismissResult;
   body.appendChild(back);
-
-  // The note goes UNDER their button row, not inside it. Their row is a flex
-  // container with its own idea of what belongs in it, and a stray child of ours
-  // came out clipped against the bottom edge of the card - visible only by
-  // looking at the rendered card on a real page, which is why it was looked at.
-  const note = document.createElement('div');
-  note.setAttribute('data-sfct', 'card-note');
-  note.textContent = replayable
-    ? 'The final position stays on the board until you leave.'
-    : 'Go back, pick an earlier move, then Continue again.';
-  Object.assign(note.style, {
-    fontSize: '12px', opacity: '.55', textAlign: 'center',
-    padding: '2px 16px 4px', color: '#fff',
-  });
-  content.appendChild(note);
   showCard(card);
 }
 
@@ -1439,7 +1335,6 @@ function onContinueClick(e) {
 function startContinuation(board, side, strength, fenFromPage) {
   const fen = fenFromPage || getFEN(board, side);
   if (!fen) { showNotice('Position not found.'); return; }
-  captureModalTemplate(); // while theirs is still on the page to copy
   removeTrigger(); // the trigger goes away while you play
   showChesscomBoard(fen, bridgePlayerColor() || getPlayerColor(), strength);
 }

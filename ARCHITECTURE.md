@@ -137,13 +137,19 @@ moves in percentages.
 
 ## The cards this extension puts up
 
-The result card and the "who is to move?" question are built out of Chess.com's
-own modal classes - `game-over-modal-shell-content`, `-header-component`,
-`-title-component`, `cc-button-component` - because those classes are global and
-unscoped, which was measured rather than assumed: a node of ours parked in
-`<body>` wearing them computes to exactly what their own modal computes to, down
-to "Chess Sans" at 22px/700 for the title. Borrowing the class also follows their
-restyles and their theme, which a copied hex value never does.
+The result card is a node-for-node copy of their **v6** game-over modal: the same
+`-shell-v6` / `-is-v6-modal-enabled` classes, the `header-header` wrapper, their
+close button, `cc-button-x-large` buttons carrying their own glyph SVGs
+(`arrow-spin-redo`, `arrow-chevron-left`, `mark-cross`), and their
+`game-over-primary-cta-…` class, which is where the 16px side inset comes from.
+Those classes are global and unscoped: rendered on a live game page beside their
+modal, the copy computed identically on card, header, title, subtitle, button row
+and button - 400px wide, buttons 368x56.
+
+It is built, never cloned off the live modal. A clone carried their Game Review
+star onto our button and their empty ad box (`game-over-ad-sidecar`, 300x282)
+beside the card. Borrowing classes still follows their restyles and their theme,
+which a copied hex value never does.
 
 It stays a child of `<body>` and never enters their component tree. Inserting one
 node of ours into one of their Vue components is what took the whole board down
