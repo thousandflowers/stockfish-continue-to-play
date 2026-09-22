@@ -800,3 +800,40 @@ describe('getPlayerColor is not fooled by a wrapper', () => {
     expect(d.getPlayerColor()).toBe('black');
   });
 });
+
+// ── getOpponentElo: the shapes a real page actually uses ─────────────────────
+// Both of these produced 1500 - "unknown" - on a real game whose opponent was
+// plainly rated 100 on screen, so the engine came out far stronger than the
+// game it was meant to match.
+describe('getOpponentElo reads the ratings that are really there', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  const row = (inner) => {
+    document.body.innerHTML =
+      `<div class="board-layout-player board-layout-top"><div class="player-row-component player-row-top">${inner}</div></div>` +
+      '<div class="board-layout-player board-layout-bottom"><div class="player-row-component">' +
+      '<span class="user-tagline-you">You</span><span>(420)</span></div></div>';
+  };
+
+  it('a rating of exactly 100 is a rating', () => {
+    row('<span class="cc-user-rating-white">(100)</span>');
+    expect(d.getOpponentElo()).toBe(100);
+  });
+  it('name and rating sharing one node still gives the rating', () => {
+    // "elettricus (100)" as a single text node: readRating wants the whole leaf
+    // to BE the number, so the leaf scan finds nothing.
+    row('<span class="user-tagline-component">elettricus (100)</span>');
+    expect(d.getOpponentElo()).toBe(100);
+  });
+  it('a four-figure rating in a shared node too', () => {
+    row('<span>Hikaru (2850)</span>');
+    expect(d.getOpponentElo()).toBe(2850);
+  });
+  it('still 1500 when the row carries no number at all', () => {
+    row('<span>Opponent</span>');
+    expect(d.getOpponentElo()).toBe(1500);
+  });
+  it('a bare leaf rating still wins over the inline scan', () => {
+    row('<span>elettricus (100)</span><span class="cc-user-rating-white">(1234)</span>');
+    expect(d.getOpponentElo()).toBe(1234);
+  });
+});

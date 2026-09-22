@@ -374,6 +374,10 @@ function labelOpponentAsEngine(name, rating) {
     // Keep their own parenthesised shape when that is how the rating is written.
     el.textContent = text;
   };
+  if (nameEl && nameEl === ratingEl) {
+    set(nameEl, rating ? `${name} (${rating})` : name);
+    return () => undo.forEach(f => f());
+  }
   set(nameEl, name);
   if (ratingEl && rating) {
     const parenthesised = /^\(.*\)$/.test((ratingEl.textContent || '').trim());
@@ -764,7 +768,6 @@ function startRefreshTimer() {
     // board node — put them back. Not in native mode: there are never any of
     // our pieces there, so this test is always true and would rebuild the
     // markers once a second for nothing.
-    alignDock(document.getElementById('sfct-badge'));
     if (!chesscomState.native && !cur.querySelector(':scope > [data-sfct="piece"]')) syncBoardToState();
   }, REFRESH_INTERVAL_MS);
 }
@@ -959,45 +962,39 @@ function onEngineMove(uci) {
 function showStatusBadge(text) {
   document.getElementById('sfct-badge')?.remove();
   document.getElementById('sfct-result')?.remove();
-  // Docked to the move-list column, the same place and the same shape as the
-  // Continue strip it replaces — nothing of ours floats over the page. Painted
-  // from Chess.com's theme tokens so it belongs to whatever theme you are on.
+  // No strip of ours anywhere on the page. The state rides along on the
+  // opponent's own player card — which already reads Stockfish and their rating
+  // — and clicking it stops. Painted from Chess.com's theme tokens.
   const badge = document.createElement('div');
   badge.id = 'sfct-badge';
-  badge.setAttribute('data-sfct', 'dock');
-  badge.dataset.anchor = sidebarPanel() ? 'panel' : 'float';
+  badge.setAttribute('data-sfct', 'status');
+  badge.title = 'Stop playing vs Stockfish';
   Object.assign(badge.style, {
-    position: 'fixed', zIndex: '999997', boxSizing: 'border-box',
-    display: 'flex', alignItems: 'center', gap: '10px',
-    padding: '10px 12px', borderRadius: '12px 12px 0 0',
-    backgroundColor: 'var(--color-bg-opaque, #262421)',
-    backgroundImage: 'var(--color-bg-gradient-modal, none)',
+    display: 'inline-flex', alignItems: 'center', gap: '6px',
+    marginLeft: '8px', padding: '2px 8px', borderRadius: '999px',
+    backgroundColor: 'var(--color-bg-input, rgba(255,255,255,.09))',
     color: 'var(--color-text-default, #ddd)',
-    borderTop: '1px solid var(--color-border-subtle, rgba(255,255,255,.08))',
-    boxShadow: '0 -8px 24px var(--color-bg-overlay-subtle, rgba(0,0,0,.35))',
-    font: 'inherit', fontSize: '14px',
+    fontSize: '12px', lineHeight: '1.6', whiteSpace: 'nowrap',
+    cursor: 'pointer', verticalAlign: 'middle',
   });
   const span = document.createElement('span');
   span.id = 'sfct-badge-text';
-  span.textContent = '\u265F ' + text;
-  Object.assign(span.style, { flex: '1', minWidth: '0', overflow: 'hidden',
-    textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
-  const stop = cardButton('Stop', false);
-  Object.assign(stop.style, { width: 'auto', minHeight: '34px', fontSize: '14px', flex: '0 0 auto' });
-  stop.onclick = (e) => { e.stopPropagation(); dismissResult(); };
+  span.textContent = text;
+  const stop = document.createElement('span');
+  stop.textContent = '\u00d7';
+  Object.assign(stop.style, { opacity: '.6', fontWeight: '700' });
   badge.append(span, stop);
-  // The whole strip stays clickable as well, the way the old badge was.
-  badge.title = 'Stop playing vs Stockfish';
-  badge.style.cursor = 'pointer';
   badge.onclick = dismissResult;
 
-  if (badge.dataset.anchor === 'float') {
-    // No column to belong to: bottom centre, out of the board's way.
-    Object.assign(badge.style, { left: '50%', bottom: '16px', top: 'auto',
-      transform: 'translateX(-50%)', borderRadius: '12px' });
+  const row = opponentRow();
+  if (row) {
+    row.appendChild(badge);
+  } else {
+    // No player card to sit on: bottom centre, out of the board's way.
+    Object.assign(badge.style, { position: 'fixed', left: '50%', bottom: '16px',
+      transform: 'translateX(-50%)', zIndex: '999997' });
+    document.body.appendChild(badge);
   }
-  document.body.appendChild(badge);
-  alignDock(badge);
 }
 
 function updateStatus(text) {
@@ -1143,6 +1140,13 @@ function makeCard(id, title, subtitle, opts) {
   const shell = el('div', 'game-over-modal-shell-container');
   shell.appendChild(content);
   card.appendChild(shell);
+  // Their layout classes carry widths meant for their own containers. Ours
+  // is a free-standing card, so every level is pinned to it: nothing can be
+  // wider than the box that clips it.
+  for (const n of [shell, content, header, inner, body]) {
+    Object.assign(n.style, { width: '100%', maxWidth: '100%',
+      boxSizing: 'border-box', minWidth: '0' });
+  }
   return { card, body, header };
 }
 
