@@ -658,6 +658,30 @@ if (nat.theirs < 3) fail(`Chess.com's own pieces were hidden in native mode (${n
 if (nat.log.continuation !== 1) fail('the continuation was not branched off: ' + JSON.stringify(nat.log));
 console.log('PASS 22: native mode - we paint nothing,', nat.theirs, 'of their pieces stand, continuation branched');
 
+// Nothing of ours may be a CHILD of anything Chess.com renders with Vue. An
+// unexpected child makes their next patch throw "insertBefore … not a child of
+// this node" and takes the board component down with it: pieces stop moving
+// and the layout collapses. This project has made that mistake three times -
+// their game-over modal, their result card, and their player row.
+const intruders = await page.evaluate(() => {
+  const hosts = ['[class*="player"]', '[class*="move-list"]', '[class*="game-over"]',
+                 '[class*="board-layout"]', '[class*="sidebar"]'];
+  const out = [];
+  for (const h of hosts) {
+    for (const host of document.querySelectorAll(h)) {
+      if (host.hasAttribute('data-sfct')) continue;
+      for (const ours of host.querySelectorAll('[data-sfct]')) {
+        // The board is the one place we are allowed to draw into.
+        if (ours.closest('wc-chess-board, chess-board')) continue;
+        out.push(h + ' contains ' + ours.getAttribute('data-sfct') + '#' + (ours.id || '?'));
+      }
+    }
+  }
+  return [...new Set(out)];
+});
+if (intruders.length) fail('we inserted nodes into Chess.com\'s own DOM: ' + intruders.join(', '));
+console.log('PASS 22b: nothing of ours is a child of anything Chess.com renders');
+
 // A move has to reach THEIR board, with from and to.
 const nbox = await page.locator('#board').boundingBox();
 const nsq = (f, r) => ({ x: nbox.x + (f - 0.5) * nbox.width / 8, y: nbox.y + (8 - r + 0.5) * nbox.height / 8 });
@@ -680,7 +704,7 @@ if (!sel.pieceShown) fail('the piece vanished when it was picked up');
 if (!(sel.markAt < sel.pieceAt))
   fail(`the marker is painted over the piece (marker at ${sel.markAt}, piece at ${sel.pieceAt})`);
 if (parseFloat(sel.opacity) >= 1) fail('the marker is opaque, so it hides what it marks');
-console.log(`PASS 22b: picked-up piece still shown, marker under it at ${sel.markAt} and translucent (${sel.opacity})`);
+console.log(`PASS 22c: picked-up piece still shown, marker under it at ${sel.markAt} and translucent (${sel.opacity})`);
 
 // Right-click is Chess.com's own annotation tool - arrows and coloured
 // squares. Our pointer handlers run on the body in the CAPTURE phase, so
@@ -699,19 +723,19 @@ if (rc.prevented) fail('a right-click reached their board already prevented - no
 // …and it must not have been mistaken for a move.
 const afterRight = await page.evaluate(() => window.__log.moves.length);
 if (afterRight !== 0) fail('a right-click was taken for a move: ' + afterRight);
-console.log('PASS 22c: right-click reaches their board unprevented, and is not taken for a move');
+console.log('PASS 22d: right-click reaches their board unprevented, and is not taken for a move');
 await page.mouse.click(nsq(5, 4).x, nsq(5, 4).y); await page.waitForTimeout(1500);
 const played = await page.evaluate(() => window.__log.moves);
 if (!played.some(m => m.from === 'e2' && m.to === 'e4'))
   fail('the move never reached their board: ' + JSON.stringify(played));
-console.log('PASS 22d: the move went to their board -', JSON.stringify(played[0]));
+console.log('PASS 22e: the move went to their board -', JSON.stringify(played[0]));
 
 // …and stopping hands the real game back.
 await page.locator('#sfct-badge').click();
 await page.waitForTimeout(800);
 const reset = await page.evaluate(() => window.__log.reset);
 if (!reset) fail('resetToMainLine was never called - the variation would be left on the game');
-console.log('PASS 22e: stopping dropped the variation and restored the main line');
+console.log('PASS 22f: stopping dropped the variation and restored the main line');
 
 
 console.log('\nALL CHECKS PASSED');
