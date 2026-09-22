@@ -719,14 +719,20 @@ const sel = await page.evaluate(() => {
   const piece = [...b.querySelectorAll('[class*="piece"]')].find(e => e.className.includes('square-52'));
   return { has: !!mark, markAt: kids.indexOf(mark), pieceAt: kids.indexOf(piece),
     pieceShown: !!piece && getComputedStyle(piece).display !== 'none',
-    opacity: mark ? getComputedStyle(mark).opacity : null };
+    opacity: mark ? getComputedStyle(mark).opacity : null,
+    paint: mark ? getComputedStyle(mark).backgroundColor : null };
 });
 if (!sel.has) fail('nothing marked the square you picked up from');
 if (!sel.pieceShown) fail('the piece vanished when it was picked up');
 if (!(sel.markAt < sel.pieceAt))
   fail(`the marker is painted over the piece (marker at ${sel.markAt}, piece at ${sel.pieceAt})`);
-if (parseFloat(sel.opacity) >= 1) fail('the marker is opaque, so it hides what it marks');
-console.log(`PASS 22c: picked-up piece still shown, marker under it at ${sel.markAt} and translucent (${sel.opacity})`);
+// Translucent either way round: an opacity below 1, or an alpha in the colour.
+// Chess.com's --color-bg-selected carries its own alpha, so the opacity
+// property stays at 1 while the paint is see-through.
+const alpha = (sel.paint || '').startsWith('rgba') ? parseFloat(sel.paint.split(',')[3]) : 1;
+if (parseFloat(sel.opacity) >= 1 && alpha >= 1)
+  fail(`the marker is opaque, so it hides what it marks: ${sel.paint} at ${sel.opacity}`);
+console.log(`PASS 22c: picked-up piece still shown, marker under it at ${sel.markAt}, paint ${sel.paint}`);
 
 // Right-click is Chess.com's own annotation tool - arrows and coloured
 // squares. Our pointer handlers run on the body in the CAPTURE phase, so

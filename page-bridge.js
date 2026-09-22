@@ -103,7 +103,22 @@
     // ply, which is exactly where a continuation starts from, the move lands
     // somewhere you are not looking. The pieces move and you never see them.
     // selectLineEnd() brings the view to the move just played.
-    move: (g, a) => { const r = g.move(a); try { g.selectLineEnd(); } catch (_) {} return r; },
+    // move() adds the move to the line; it does not promise the board is SHOWING
+    // it. With the view parked on an earlier ply — where a continuation starts —
+    // the move lands somewhere nobody is looking.
+    //
+    // moveForward() first, because it is the step their board ANIMATES;
+    // selectLineEnd() jumps, which is what made the pieces snap from square to
+    // square instead of sliding. Each is tried only if the position has not
+    // already followed.
+    move: (g, a) => {
+      const at = () => { try { return g.getFEN(); } catch (_) { return null; } };
+      const before = at();
+      const r = g.move(a);
+      if (at() === before) { try { g.moveForward(); } catch (_) {} }
+      if (at() === before) { try { g.selectLineEnd(); } catch (_) {} }
+      return r;
+    },
     reset: (g) => g.resetToMainLine(),
     // Walk the move list back, so a rematch can return to the position the
     // continuation began from instead of branching at the end of the game.

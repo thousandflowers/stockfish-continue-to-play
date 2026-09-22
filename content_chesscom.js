@@ -443,11 +443,6 @@ function showChesscomBoard(fen, color, strengthSetting) {
     startRefreshTimer();
     chesscomState._restoreOpponentName = labelOpponentAsEngine('Stockfish', strength.label);
     showStatusBadge('loading engine…');
-    // Say plainly that a new game has started — the board looks the same as the
-    // one that just ended, so without this it is not obvious anything changed.
-    showBanner(`♟ New game vs Stockfish (${strength.label}) - you play ` +
-               (playerSide === 'w' ? 'White' : 'Black'), 6000);
-
     initEngine().then(() => {
       if (session !== sessionId || !chesscomState) return; // stopped or restarted while loading
       if (strength.uciElo) {
@@ -564,21 +559,13 @@ function makePieceNode(pc) {
   return el;
 }
 
-// The paint Chess.com actually uses for a highlighted square, copied off one of
-// its own. Their theme overrides the .highlight rule, so the rule's own value is
-// not what anybody sees. Falls back to that value at an opacity that at least
-// does not hide the piece underneath, for a board that is showing no highlight
-// of its own to copy.
-function highlightPaint(board) {
-  const theirs = board.querySelector('[class*="highlight"]:not([data-sfct])');
-  if (theirs) {
-    const s = getComputedStyle(theirs);
-    if (s.backgroundColor && s.backgroundColor !== 'rgba(0, 0, 0, 0)') {
-      return { background: s.backgroundColor, opacity: s.opacity };
-    }
-  }
-  return { background: 'rgb(255,255,51)', opacity: '0.42' };
-}
+// Chess.com's own token for a selected square. Copying the paint off whichever
+// highlight happened to be first on the board looked clever and was not: on a
+// review page the first one is an annotation — a red blunder, a yellow
+// inaccuracy — so the square you picked up came out in whatever colour that
+// move had been graded. --color-bg-selected means exactly this and nothing
+// else.
+const SELECTED_PAINT = { background: 'var(--color-bg-selected, rgba(255,255,255,.4))', opacity: '1' };
 
 // Restart Chess.com's grow / wiggle / shrink on the checked king.
 function replayCheck() {
@@ -710,7 +697,7 @@ function syncBoardToState() {
       // overrides it to a translucent green, the same way it overrides the
       // capture ring's declared 5px. Taking the class alone gave us the raw
       // yellow, opaque, which is not their colour and hides what it marks.
-      const paint = highlightPaint(board);
+      const paint = SELECTED_PAINT;
       // FIRST child, not last: Chess.com's highlights sit under the pieces and
       // ours has to as well. Appended at the end it painted OVER the piece and
       // the piece you had just picked up vanished until the move was made.
@@ -1058,14 +1045,15 @@ function showBanner(text, ms) {
     fontFamily: '-apple-system,BlinkMacSystemFont,sans-serif', fontSize: '18px',
     fontWeight: '600', boxShadow: '0 8px 32px rgba(0,0,0,.7)', cursor: 'pointer',
     animation: '_sfctin .28s ease',
+    // Never intercepts a click. This banner sat over the top of the page and
+    // our pointer handlers skip anything inside it, so until it was dismissed
+    // it swallowed every click that landed under it — the first move of a
+    // continuation simply did not register.
+    pointerEvents: 'none',
   });
   const msg = document.createElement('span');
   msg.textContent = text;
-  const hint = document.createElement('small');
-  hint.style.cssText = 'opacity:.5;font-size:11px;margin-left:6px';
-  hint.textContent = '(click to close)';
-  el.append(msg, hint);
-  el.onclick = () => el.remove();
+  el.append(msg);
   document.body.appendChild(el);
   setTimeout(() => el.remove(), ms || BANNER_TIMEOUT_MS);
 }
