@@ -788,7 +788,24 @@ function startRefreshTimer() {
     // our pieces there, so this test is always true and would rebuild the
     // markers once a second for nothing.
     alignStatus();
-    if (!chesscomState.native && !cur.querySelector(':scope > [data-sfct="piece"]')) syncBoardToState();
+    // Never leave a blank board. Our style hides Chess.com's pieces so ours can
+    // stand in their place; if ours are not there, the board shows nothing at
+    // all and the game is unplayable however well the engine is running behind
+    // it. Try once to draw them, and if that does not work, drop the style and
+    // give their pieces back. A board showing THEIR position is wrong but
+    // playable; a board showing nothing is broken, and broken is worse than
+    // wrong. This is the state a real page reached with 27 of their pieces
+    // hidden and none of ours drawn, and nothing in the console to say why.
+    const hiding = document.getElementById('sfct-board-style');
+    const mine = () => cur.querySelector(':scope > [data-sfct="piece"]');
+    if (!chesscomState.native && !mine()) {
+      syncBoardToState();
+      if (hiding && !mine()) {
+        warn('no pieces of ours on the board \u2014 handing it back to Chess.com');
+        hiding.remove();
+        chesscomState.native = true; // stop hiding, stop drawing: theirs is what shows
+      }
+    }
   }, REFRESH_INTERVAL_MS);
 }
 
