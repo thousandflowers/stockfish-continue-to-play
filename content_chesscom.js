@@ -1186,10 +1186,12 @@ function centreOnBoard(el) {
 }
 
 // Chess.com's own glyphs, copied off their live pages (svg[data-glyph]) - the
-// ↻ beside their New Game button, their back chevron, the modal's close cross.
+// ↻ beside their New Game button, their back chevron, their play triangle, the
+// modal's close cross.
 const GLYPHS = {
   'arrow-spin-redo': 'm11 22.47c-6.07 0-10.5-4.87-10.5-10.47 0-5.93 4.8-10.5 10.5-10.5 2.7 0 5.37 1.03 7.43 3.07l1.47 1.47-2.13 2.13-1.47-1.47c-1.47-1.47-3.4-2.2-5.3-2.2-4.13 0-7.5 3.37-7.5 7.5s3.37 7.5 7.5 7.5c2.57 0 4.53-1.17 6.03-3 .6-.83 1.17-.93 2.03-.37l.1.1c.87.57.97 1.13.37 1.97-2.1 2.63-4.9 4.27-8.53 4.27zm11.43-17.44.63 5.13c.13 1.03-.23 1.4-1.27 1.27l-5.17-.63c-.9-.1-1.03-.57-.4-1.2l5-5c.63-.63 1.1-.5 1.2.43zm0 0',
   'arrow-chevron-left': 'm16.27 21.13-.07.07c-1.13 1.13-1.6 1.13-2.73 0l-6.4-6.37c-1.73-1.77-1.73-3.9 0-5.67l6.4-6.37c1.13-1.13 1.6-1.13 2.73 0l.07.07c1.13 1.13 1.13 1.6 0 2.73l-6.37 6.4 6.37 6.4c1.13 1.13 1.13 1.6 0 2.73zm0 0',
+  'media-control-play': 'm20.5 12.8-12.73 8.73c-1.27.9-1.77.63-1.77-.93v-17.27c0-1.53.5-1.8 1.77-.9l12.73 8.77c.83.57.83 1.03 0 1.6zm0 0',
   'mark-cross': 'm6.1 20.77c-1.13 1.13-1.6 1.13-2.73 0l-.13-.13c-1.13-1.13-1.13-1.6 0-2.73l5.97-5.9-5.97-6c-1.13-1.13-1.13-1.6 0-2.73l.13-.1c1.13-1.13 1.6-1.13 2.73 0l5.93 6 5.93-5.97c1.13-1.13 1.6-1.13 2.73 0l.13.13c1.13 1.13 1.13 1.6 0 2.73l-5.97 5.93 5.8 5.9c1.13 1.13 1.13 1.6 0 2.73l-.1.13c-1.13 1.13-1.6 1.13-2.73 0l-5.8-5.93zm0 0',
 };
 
@@ -1352,38 +1354,45 @@ function startContinuation(board, side, strength, fenFromPage) {
   showChesscomBoard(fen, bridgePlayerColor() || getPlayerColor(), strength);
 }
 
-// Build a button that mimics a Chess.com modal button when given a template.
-function makeNativeButton(template) {
-  const btn = document.createElement('button');
+// The same button the result card uses - their secondary x-large, with their
+// play glyph - so it sits under their Game Review as one more of their buttons.
+function makeTriggerButton() {
+  const btn = cardButton('Continue vs Computer', false, 'media-control-play');
   btn.id = 'sfctplay-btn';
-  if (template?.className) {
-    btn.className = template.className;
-    btn.classList.remove('ui_v5-button-primary', 'cc-button-primary');
-    btn.classList.add('ui_v5-button-secondary', 'cc-button-secondary');
-  }
-  const wrap = document.createElement('span');
-  wrap.className = 'ui_v5-button-content-wrapper';
-  const label = document.createElement('span');
-  label.className = 'ui_v5-button-text';
-  label.textContent = '♟ Continue vs Computer';
-  wrap.appendChild(label);
-  btn.appendChild(wrap);
-  Object.assign(btn.style, {
-    display: 'inline-flex', justifyContent: 'center', alignItems: 'center',
-    minHeight: '48px', cursor: 'pointer', marginTop: '8px',
-  });
-  // No modal means no Chess.com button to borrow the look from, and the label
-  // would land as bare text on the dock. Paint it in their green instead.
-  if (!template?.className) {
-    Object.assign(btn.style, {
-      width: '100%', border: 'none', borderRadius: '8px', background: '#81b64c',
-      color: '#fff', fontSize: '15px', fontWeight: '700',
-      boxShadow: 'inset 0 -3px 0 rgba(0,0,0,.18)',
-      fontFamily: '-apple-system,BlinkMacSystemFont,sans-serif',
-    });
-  }
+  // Not part of a game: it outlives every stop, so it must not carry the mark
+  // the teardown sweeps. And without that mark, a class with "game-over" in it
+  // would make isGameOver() see the finished game in our own button - so the
+  // 16px side inset their cta class gives is the dock's padding instead.
+  btn.removeAttribute('data-sfct');
+  btn.classList.remove('game-over-primary-cta-game-over-primary-cta');
+  btn.style.width = '100%'; // their flex column stretches theirs; our dock is a block
   btn.onclick = onContinueClick;
   return btn;
+}
+
+// Their modal's card: the shell content carries the paint (background, 10px
+// corners, a 1px inset edge) and the 16px under the last button.
+const modalShell = (modal) => modal.querySelector('.game-over-modal-shell-content') || modal;
+
+// A dock that reads as the bottom of THEIR card: it starts where their last
+// button ends, covers their bottom padding and rounded corners, and redraws
+// both below our button - their 8px button gap above it, their 16px under it,
+// their radius, their inset edge on the three sides that are outside. Every
+// value is read off their card as it computes, so a restyle carries over.
+function dockUnderModal(dock, modal) {
+  const shell = modalShell(modal);
+  const cs = getComputedStyle(shell);
+  const row = shell.querySelector('.game-over-modal-shell-buttons');
+  const gap = row ? getComputedStyle(row).rowGap : '8px';
+  const edge = (cs.boxShadow.match(/(rgba?\([^)]*\))[^,]*inset/) || [])[1];
+  const radius = cs.borderBottomLeftRadius;
+  Object.assign(dock.style, {
+    background: cs.backgroundColor && !/rgba\(0, 0, 0, 0\)|transparent/.test(cs.backgroundColor)
+      ? cs.backgroundColor : solidBackground(modal),
+    padding: `${gap === 'normal' ? '8px' : gap} 16px ${cs.paddingBottom}`,
+    borderRadius: `0 0 ${radius} ${radius}`,
+    boxShadow: edge ? `inset 1px 0 0 ${edge}, inset -1px 0 0 ${edge}, inset 0 -1px 0 ${edge}` : 'none',
+  });
 }
 
 // Can this page tell us whose move it is? If not, no trigger is offered: the
@@ -1418,8 +1427,7 @@ function injectButtons() {
   // Line the trigger up under the anchor but keep the node in <body>: Chess.com
   // renders both surfaces with Vue, and inserting into them made Vue throw
   // "insertBefore … not a child of this node" on its next patch.
-  const btn = makeNativeButton(modal ? modalButtonAnchor(modal) : null);
-  btn.style.width = '100%';
+  const btn = makeTriggerButton();
 
   // A strip that continues the surface above it: same width, same background,
   // rounded off at the bottom, sitting flush against it, so the two read as one
@@ -1427,15 +1435,14 @@ function injectButtons() {
   const dock = document.createElement('div');
   dock.id = 'sfctplay-dock';
   dock.dataset.anchor = modal ? 'modal' : 'panel';
-  const underCard = !!modal;
-  Object.assign(dock.style, {
-    position: 'fixed', zIndex: '999997', boxSizing: 'border-box',
-    background: solidBackground(anchor),
-    padding: underCard ? '0 20px 16px' : '10px 12px 12px',
-    borderRadius: underCard ? '0 0 12px 12px' : '12px 12px 0 0',
-    boxShadow: underCard ? '0 12px 32px rgba(0,0,0,.45)' : '0 -8px 24px rgba(0,0,0,.35)',
-    borderTop: underCard ? 'none' : '1px solid rgba(255,255,255,.08)',
-  });
+  Object.assign(dock.style, { position: 'fixed', zIndex: '999997', boxSizing: 'border-box' });
+  if (modal) {
+    dockUnderModal(dock, modal);
+  } else {
+    // The foot of their move-list column: the column's own paint, their 16px
+    // around the button.
+    Object.assign(dock.style, { background: solidBackground(anchor), padding: '16px' });
+  }
   dock.appendChild(btn);
   document.body.appendChild(dock);
   alignTrigger();
@@ -1477,13 +1484,18 @@ function alignTrigger() {
     injectButtons();
     return;
   }
-  const anchor = dock.dataset.anchor === 'panel' ? sidebarPanel() : findGameOverModal();
+  const modal = dock.dataset.anchor === 'panel' ? null : findGameOverModal();
+  const anchor = modal ? modalShell(modal) : sidebarPanel();
   if (!anchor) { removeTrigger(); return; }
   const r = anchor.getBoundingClientRect();
   if (!r.width) return;
   dock.style.left = r.left + 'px';
   dock.style.width = r.width + 'px';
-  if (dock.dataset.anchor !== 'panel') { dock.style.top = (r.bottom - 1) + 'px'; return; }
+  if (modal) {
+    // Over their bottom padding, so their rounded corners are under ours.
+    dock.style.top = (r.bottom - (parseFloat(getComputedStyle(anchor).paddingBottom) || 0)) + 'px';
+    return;
+  }
   const h = dock.getBoundingClientRect().height || 64;
   // Ask the column to be that much shorter, so the bar lands in free space
   // instead of over the icons at its foot. Falls back to covering them if the

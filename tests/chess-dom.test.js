@@ -170,14 +170,6 @@ describe('fixture: chesscom-gameover-real-modal (captured from live chess.com)',
   it('finds the modal', () => {
     expect(d.findGameOverModal()?.className).toContain('game-over-modal-shell-container');
   });
-  it('anchors next to Chess.com\'s own button, not the close X', () => {
-    const a = d.modalButtonAnchor(d.findGameOverModal());
-    expect(a.getAttribute('aria-label')).toBe('New Game');
-  });
-  it('anchor is inside the modal button row, so our trigger lands there too', () => {
-    const a = d.modalButtonAnchor(d.findGameOverModal());
-    expect(a.parentElement.className).toContain('game-over-modal-shell-buttons');
-  });
 });
 
 // ── averageMoveSeconds ───────────────────────────────────────────────────────
