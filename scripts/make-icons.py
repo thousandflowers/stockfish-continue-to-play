@@ -15,7 +15,7 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
-MASTER = ROOT / "store" / "icon-source-534.png"
+MASTER = ROOT / "store" / "icon-source.png"
 
 # Below this width the whole board cannot survive the downscale.
 CROP_BELOW = 48
