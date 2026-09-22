@@ -109,17 +109,6 @@ bash scripts/download-stockfish.sh
 
 ---
 
-## Roadmap
-
-| | Status |
-|---|:---:|
-| Chess.com inline play vs Stockfish | ✅ |
-| Adaptive difficulty from opponent rating | ✅ |
-| Chrome Web Store release | ◻︎ planned |
-| Firefox Add-ons release | ◻︎ planned |
-
----
-
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for local dev setup, testing, and PR guidelines.
