@@ -744,6 +744,7 @@ function startRefreshTimer() {
     // board node — put them back. Not in native mode: there are never any of
     // our pieces there, so this test is always true and would rebuild the
     // markers once a second for nothing.
+    alignDock(document.getElementById('sfct-badge'));
     if (!chesscomState.native && !cur.querySelector(':scope > [data-sfct="piece"]')) syncBoardToState();
   }, REFRESH_INTERVAL_MS);
 }
@@ -938,21 +939,45 @@ function onEngineMove(uci) {
 function showStatusBadge(text) {
   document.getElementById('sfct-badge')?.remove();
   document.getElementById('sfct-result')?.remove();
+  // Docked to the move-list column, the same place and the same shape as the
+  // Continue strip it replaces — nothing of ours floats over the page. Painted
+  // from Chess.com's theme tokens so it belongs to whatever theme you are on.
   const badge = document.createElement('div');
   badge.id = 'sfct-badge';
+  badge.setAttribute('data-sfct', 'dock');
+  badge.dataset.anchor = sidebarPanel() ? 'panel' : 'float';
   Object.assign(badge.style, {
-    position: 'fixed', top: '12px', right: '12px', zIndex: '999999',
-    background: 'rgba(0,0,0,.7)', color: '#ddd', padding: '5px 10px',
-    borderRadius: '6px', fontSize: '12px', fontFamily: '-apple-system,sans-serif',
-    backdropFilter: 'blur(4px)', cursor: 'pointer',
+    position: 'fixed', zIndex: '999997', boxSizing: 'border-box',
+    display: 'flex', alignItems: 'center', gap: '10px',
+    padding: '10px 12px', borderRadius: '12px 12px 0 0',
+    backgroundColor: 'var(--color-bg-opaque, #262421)',
+    backgroundImage: 'var(--color-bg-gradient-modal, none)',
+    color: 'var(--color-text-default, #ddd)',
+    borderTop: '1px solid var(--color-border-subtle, rgba(255,255,255,.08))',
+    boxShadow: '0 -8px 24px var(--color-bg-overlay-subtle, rgba(0,0,0,.35))',
+    font: 'inherit', fontSize: '14px',
   });
-  badge.title = 'Click to stop playing vs Stockfish';
   const span = document.createElement('span');
   span.id = 'sfct-badge-text';
-  span.textContent = '♟ ' + text;
-  badge.appendChild(span);
+  span.textContent = '\u265F ' + text;
+  Object.assign(span.style, { flex: '1', minWidth: '0', overflow: 'hidden',
+    textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
+  const stop = cardButton('Stop', false);
+  Object.assign(stop.style, { width: 'auto', minHeight: '34px', fontSize: '14px', flex: '0 0 auto' });
+  stop.onclick = (e) => { e.stopPropagation(); dismissResult(); };
+  badge.append(span, stop);
+  // The whole strip stays clickable as well, the way the old badge was.
+  badge.title = 'Stop playing vs Stockfish';
+  badge.style.cursor = 'pointer';
   badge.onclick = dismissResult;
+
+  if (badge.dataset.anchor === 'float') {
+    // No column to belong to: bottom centre, out of the board's way.
+    Object.assign(badge.style, { left: '50%', bottom: '16px', top: 'auto',
+      transform: 'translateX(-50%)', borderRadius: '12px' });
+  }
   document.body.appendChild(badge);
+  alignDock(badge);
 }
 
 function updateStatus(text) {
@@ -1018,30 +1043,11 @@ function cardButton(text, primary) {
     (primary ? 'cc-button-primary cc-bg-primary' : 'cc-button-secondary');
   b.textContent = text;
   b.style.width = '100%';
+  b.style.boxSizing = 'border-box';
   // cc-button-primary brings its own green gradient. The secondary paints
   // nothing outside their own containers, so it gets their input surface token
   // rather than a colour invented here.
   if (!primary) b.style.backgroundColor = 'var(--color-bg-input, rgba(255,255,255,.09))';
-  return b;
-}
-
-// Their close button. The glyph class is build-hashed (cc-icon-glyph_57606db),
-// so it is read off one already on the page rather than written down here, where
-// it would be wrong by the next deploy.
-function closeButton() {
-  const b = document.createElement('button');
-  b.setAttribute('data-sfct', 'card');
-  b.className = 'cc-close-button-component cc-close-button-medium cc-close-button-subtle';
-  b.setAttribute('aria-label', 'Close');
-  const bg = document.createElement('div');
-  bg.setAttribute('data-sfct', 'card');
-  bg.className = 'cc-close-button-bg';
-  const icon = document.createElement('span');
-  icon.setAttribute('data-sfct', 'card');
-  const theirs = document.querySelector('[class*="cc-close-button-icon"]');
-  icon.className = theirs ? String(theirs.className) : 'cc-close-button-icon';
-  b.append(bg, icon);
-  Object.assign(b.style, { position: 'absolute', top: '10px', right: '10px', cursor: 'pointer' });
   return b;
 }
 
@@ -1078,7 +1084,7 @@ function makeCard(id, title, subtitle, opts) {
   // defines neither.
   Object.assign(card.style, {
     position: 'fixed', zIndex: '999998', width: 'min(340px,86vw)',
-    overflow: 'hidden', animation: '_sfctpop .18s ease-out',
+    overflow: 'hidden', boxSizing: 'border-box', animation: '_sfctpop .18s ease-out',
     // BOTH: their modal gradient runs from #312E2B to almost transparent,
     // because it is meant to sit ON a solid surface rather than be one. Set
     // as `background` alone it made the card see-through.
@@ -1094,7 +1100,8 @@ function makeCard(id, title, subtitle, opts) {
     (opts?.winner ? ` game-over-modal-header-${opts.winner === 'w' ? 'white' : 'black'}Won` : ''));
   header.style.position = 'relative';
   const inner = el('div', 'game-over-modal-header-inner');
-  Object.assign(inner.style, { padding: '22px 20px 14px', textAlign: 'center' });
+  Object.assign(inner.style, { padding: '22px 20px 14px', textAlign: 'center',
+    boxSizing: 'border-box' });
   const h = el('div', 'game-over-modal-header-header', title);
   Object.assign(h.style, { fontSize: '26px', fontWeight: '800', lineHeight: '1.15' });
   inner.appendChild(h);
@@ -1107,7 +1114,7 @@ function makeCard(id, title, subtitle, opts) {
 
   const body = el('div', 'game-over-modal-shell-buttons');
   Object.assign(body.style, { display: 'flex', flexDirection: 'column', gap: '8px',
-    padding: '0 20px 20px' });
+    padding: '0 20px 20px', boxSizing: 'border-box' });
 
   const content = el('div', 'game-over-modal-shell-content');
   content.append(header, body);
@@ -1161,10 +1168,7 @@ function askSideToMove(onPick) {
 // `opts.rematch === false` drops the "play again" button: a position that was
 // already over when you picked it would lead straight back to this card.
 function showResultModal(title, subtitle, opts) {
-  const { card, body, header } = makeCard('sfct-result', title, subtitle || '', opts);
-  const close = closeButton();
-  close.onclick = dismissResult;
-  header.appendChild(close);
+  const { card, body } = makeCard('sfct-result', title, subtitle || '', opts);
   const replayable = opts?.rematch !== false;
   if (replayable) {
     const again = cardButton('Play again vs Stockfish', true);
@@ -1179,7 +1183,7 @@ function showResultModal(title, subtitle, opts) {
     ? 'The final position stays on the board until you leave.'
     : 'Go back, pick an earlier move, then Continue again.';
   Object.assign(note.style, { fontSize: '12px', opacity: '.5', textAlign: 'center', marginTop: '2px',
-    color: 'var(--color-text-subtle, inherit)' });
+    color: 'var(--color-text-subtle, inherit)', lineHeight: '1.3' });
   body.append(back, note);
   showCard(card);
 }
@@ -1323,33 +1327,31 @@ function extensionAlive() {
   try { return !!chrome.runtime?.id; } catch (_) { return false; }
 }
 
-// Keep the dock aligned to whatever it was anchored to — the result card or the
-// move-list column — at that anchor's exact width, so the two keep reading as
-// one panel through scrolls and resizes.
+// Align a docked strip to whatever it was anchored to — Chess.com's result card
+// or the move-list column — at that anchor's exact width, so the two read as one
+// panel through scrolls and resizes.
 //
 // The two anchors need opposite treatment. A result card is a floating box with
-// empty page under it, so the dock hangs BELOW it. The move-list column runs the
-// full height of the window, so there is no "below" to hang in: the dock sits at
-// the bottom of the column as seen, inside the column's own width, reading as
-// its last row. Handing over to a floating button when the column ran past the
-// fold meant handing over every single time, since it always does.
-function alignTrigger() {
-  const dock = document.getElementById('sfctplay-dock');
+// empty page under it, so the strip hangs BELOW it. The move-list column runs
+// the full height of the window, so there is no "below": the strip sits at the
+// bottom of the column as seen, inside its own width, and the column is asked to
+// be that much shorter so nothing is covered.
+function alignDock(dock) {
   if (!dock) return;
-  const anchor = dock.dataset.anchor === 'panel' ? sidebarPanel() : findGameOverModal();
-  if (!anchor) { removeTrigger(); return; }
+  const panel = dock.dataset.anchor === 'panel';
+  const anchor = panel ? sidebarPanel() : findGameOverModal();
+  if (!anchor) { if (!panel) removeTrigger(); return; }
   const r = anchor.getBoundingClientRect();
   if (!r.width) return;
   dock.style.left = r.left + 'px';
   dock.style.width = r.width + 'px';
-  if (dock.dataset.anchor !== 'panel') { dock.style.top = (r.bottom - 1) + 'px'; return; }
+  if (!panel) { dock.style.top = (r.bottom - 1) + 'px'; return; }
   const h = dock.getBoundingClientRect().height || 64;
-  // Ask the column to be that much shorter, so the bar lands in free space
-  // instead of over the icons at its foot. Falls back to covering them if the
-  // column will not shrink.
   reserveColumnFoot(anchor, h);
   dock.style.top = Math.max(0, Math.min(r.bottom, window.innerHeight) - h) + 'px';
 }
+
+function alignTrigger() { alignDock(document.getElementById('sfctplay-dock')); }
 
 // The modal container itself is often transparent — walk up until something
 // actually paints, so the dock matches the card instead of flashing white.
