@@ -930,6 +930,14 @@ function refuseMove() {
 
 // The four-piece column Chess.com pops over the promotion square. Queen first,
 // then knight, rook, bishop — its order, since that is the order people expect.
+// Their promotion window, built the way their chessboard bundle builds it
+// (read off chessboard-*.js on a live page): a div.promotion-window holding an
+// <i class="close-button icon-font-chess x"> and four div.promotion-piece, q n r b,
+// as direct children. It hangs off the promotion edge (.top), is shifted to the
+// file with translateX, and opens through their own .dynamic clip-path animation
+// by adding promotion-window--visible after a reflow. Every rule it wears is
+// theirs - the white column, the 3px corners, the shadow, the scale(1.15) under
+// the pointer, the piece sprites (scoped to the board host it sits inside).
 function askPromotion(to, side, onPick) {
   const st = chesscomState;
   // No board to hang the picker off: refuse the move rather than choose a
@@ -938,35 +946,37 @@ function askPromotion(to, side, onPick) {
   if (!st?.board) { updateStatus('Cannot show the promotion picker'); return; }
   document.querySelectorAll('[data-sfct="promo"]').forEach(el => el.remove());
   const flipped = isFlipped(st.board);
-  const f = to.charCodeAt(0) - 97;
-  const r = parseInt(to[1], 10);
-  const col = document.createElement('div');
-  col.setAttribute('data-sfct', 'promo');
-  const fromTop = flipped ? r === 1 : r === 8; // the column hangs off the promotion edge
-  // Four squares tall, one square wide, in board units — a piece is 12.5% of the
-  // board, so the column is exactly 50%. No aspect-ratio: Chess.com's own .piece
-  // rule is absolutely positioned, and the cells would collapse to zero height.
-  col.style.cssText = `position:absolute;left:${(flipped ? 7 - f : f) * 12.5}%;width:12.5%;height:50%;` +
-    `z-index:9;background:#f8f8f8;border-radius:6px;box-shadow:0 10px 28px rgba(0,0,0,.5);` +
-    `overflow:hidden;` + (fromTop ? 'top:0;' : 'bottom:0;');
+  const file = (flipped ? 'hgfedcba' : 'abcdefgh').indexOf(to[0]) + 1;
+  // Their rule: White promotes at the top unless the board is flipped.
+  const top = flipped ? side === 'b' : side === 'w';
+  const win = document.createElement('div');
+  win.setAttribute('data-sfct', 'promo');
+  win.className = 'promotion-window dynamic' + (top ? ' top' : '');
+  win.style.transform = `translateX(${(file - 1) * 100}%)`;
+  // Their window sits at z 2 among their own pieces; ours stand at PIECE_Z and
+  // the dots at 6, so it has to be lifted above both.
+  win.style.zIndex = '9';
+
+  // Chosen on pointerdown, as theirs is - and stopped there, so the board's own
+  // press handler never sees the press.
+  const onPress = (fn) => (e) => { e.preventDefault(); e.stopPropagation(); fn(); };
+  const close = document.createElement('i');
+  close.className = 'close-button icon-font-chess x';
+  close.setAttribute('data-sfct', 'promo-close');
+  close.addEventListener('pointerdown', onPress(cancelPromotion));
+  win.appendChild(close);
   for (const p of ['q', 'n', 'r', 'b']) {
     const cell = document.createElement('div');
     // Marked as ours: the style that hides Chess.com's pieces keys off the
-    // absence of data-sfct, and these carry Chess.com's own `piece` class to
-    // borrow its sprite.
+    // absence of data-sfct, and "promotion-piece" matches its [class*="piece"].
     cell.setAttribute('data-sfct', 'promo-piece');
-    cell.className = `piece ${side}${p}`;
-    cell.style.cssText = 'position:relative;width:100%;height:25%;left:auto;top:auto;' +
-      'transform:none;background-size:100% 100%;cursor:pointer';
-    // backgroundColor, never the `background` shorthand: the shorthand resets
-    // background-image too, and the piece IS a background image borrowed from
-    // their sprite - so hovering a choice used to rub the piece out.
-    cell.onmouseenter = () => { cell.style.backgroundColor = 'rgba(0,0,0,.08)'; };
-    cell.onmouseleave = () => { cell.style.backgroundColor = ''; };
-    cell.onclick = (e) => { e.preventDefault(); e.stopPropagation(); col.remove(); onPick(p); };
-    col.appendChild(cell);
+    cell.className = `promotion-piece ${side}${p}`;
+    cell.addEventListener('pointerdown', onPress(() => { win.remove(); onPick(p); }));
+    win.appendChild(cell);
   }
-  st.board.appendChild(col);
+  st.board.appendChild(win);
+  void win.offsetHeight; // their reflow, so the clip-path opens rather than appears
+  win.classList.add('promotion-window--visible');
 }
 
 function cancelPromotion() {

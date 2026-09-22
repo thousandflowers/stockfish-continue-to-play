@@ -330,7 +330,24 @@ console.log('PASS 13: closing the result restores', handedBack, 'Chess.com piece
 
 // 14. castling the Chess.com way (king onto your own rook) and promotion with a
 // real choice of piece — both driven through the UI, against the real engine.
-const CASTLE_HTML = `<!doctype html><html><body style="margin:0">
+// Their promotion-window rules, copied verbatim off a live chess.com stylesheet
+// (2026-09-22): the picker is built to wear them, so the fixture carries them.
+const PROMO_CSS = `<style>
+.promotion-window { background-color: rgb(255, 255, 255); border-radius: 3px; bottom: 0px; display: flex; flex-direction: column-reverse; height: 56.25%; left: 0px; position: absolute; top: auto; width: 12.5%; z-index: 2; }
+.promotion-window.top { bottom: auto; top: 0px; }
+.promotion-window .promotion-piece { background-position-y: bottom; background-repeat: no-repeat; background-size: 100%; cursor: pointer; padding-top: 100%; position: relative; }
+.promotion-window .promotion-piece.wq, .promotion-window .promotion-piece.bq { order: 0; }
+.promotion-window .promotion-piece.wn, .promotion-window .promotion-piece.bn { order: 1; }
+.promotion-window .promotion-piece.wr, .promotion-window .promotion-piece.br { order: 2; }
+.promotion-window .promotion-piece.wb, .promotion-window .promotion-piece.bb { order: 3; }
+.promotion-window.top .promotion-piece.wq, .promotion-window.top .promotion-piece.bq { order: 4; }
+.promotion-window.top .promotion-piece.wn, .promotion-window.top .promotion-piece.bn { order: 3; }
+.promotion-window.top .promotion-piece.wr, .promotion-window.top .promotion-piece.br { order: 2; }
+.promotion-window.top .promotion-piece.wb, .promotion-window.top .promotion-piece.bb { order: 1; }
+.promotion-window .close-button { align-items: center; border-radius: 4px 4px 0px 0px; cursor: pointer; display: flex; flex-grow: 1; font-size: 150%; justify-content: center; max-height: 12.5%; order: 4; }
+.promotion-window.top .close-button { border-radius: 0px 0px 3px 3px; order: 0; }
+</style>`;
+const CASTLE_HTML = `<!doctype html><html><head>${PROMO_CSS}</head><body style="margin:0">
 <div class="player-row-component player-row-top"><span class="cc-user-rating-white">(1450)</span></div>
 <wc-chess-board id="board" style="position:relative;display:block;width:480px;height:480px;background:#eee">
 ${fenToDivs('4k3/P7/8/8/8/8/8/R3K2R')}</wc-chess-board>
@@ -391,28 +408,19 @@ const offered = await page.$$eval('[data-sfct="promo"] > div', els =>
   els.map(e => (e.className.match(/\bw([qnrb])\b/) || [])[1]));
 if (offered.join('') !== 'qnrb') fail('promotion picker offered: ' + offered.join(','));
 
-// 15b. hovering a choice must not rub the choice out. The piece IS a background
-// image borrowed from their sprite, so a hover that writes the `background`
-// shorthand clears it - which is how this broke, with all four cells going blank
-// under the pointer.
-// On a real page the sprite arrives from Chess.com's own stylesheet, which this
-// fixture does not load, so one is stood in here: what is under test is our
-// hover handler, and a shorthand write clears an inline image exactly as it
-// clears a stylesheet one.
-const hoverKept = await page.evaluate(() => {
-  const cell = document.querySelectorAll('[data-sfct="promo"] > div')[1];
-  cell.style.backgroundImage = 'url("data:image/gif;base64,R0lGODlhAQABAAAAACw=")';
-  const before = getComputedStyle(cell).backgroundImage;
-  cell.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }));
-  const during = getComputedStyle(cell).backgroundImage;
-  const tint = getComputedStyle(cell).backgroundColor;
-  cell.dispatchEvent(new MouseEvent('mouseleave', { bubbles: false }));
-  return { before, during, tint, after: getComputedStyle(cell).backgroundColor };
+// 15b. The picker is their promotion window: their classes, opened the way
+// theirs opens, on the a-file, hanging from the top edge White promotes on, one
+// file wide and 56.25% of the board tall - the geometry their rules give it.
+const win = await page.$eval('[data-sfct="promo"]', (w) => {
+  const r = w.getBoundingClientRect(), b = w.parentElement.getBoundingClientRect();
+  return { cls: w.className, close: !!w.querySelector(':scope > i.close-button.icon-font-chess.x'),
+    x: r.left - b.left, y: r.top - b.top, w: r.width / b.width, h: r.height / b.height };
 });
-if (hoverKept.before === 'none') fail('the stand-in sprite did not take');
-if (hoverKept.during !== hoverKept.before) fail('hover erased the promotion sprite: ' + JSON.stringify(hoverKept));
-if (hoverKept.tint === hoverKept.after) fail('hover tinted nothing: ' + JSON.stringify(hoverKept));
-console.log('PASS 15b: hovering a promotion choice tints it and keeps its piece - ' + hoverKept.tint);
+if (win.cls !== 'promotion-window dynamic top promotion-window--visible' || !win.close)
+  fail('the picker is not their promotion window: ' + JSON.stringify(win));
+if (Math.abs(win.x) > 1 || Math.abs(win.y) > 1 || Math.abs(win.w - 0.125) > 0.002 || Math.abs(win.h - 0.5625) > 0.002)
+  fail('the promotion window is not where theirs would be: ' + JSON.stringify(win));
+console.log('PASS 15b: the picker is their promotion window, on the a-file at the top edge');
 
 await page.locator('[data-sfct="promo"] > div').nth(1).click(); // the knight
 await page.waitForTimeout(1200);
