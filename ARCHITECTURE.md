@@ -87,6 +87,33 @@ When the bridge is absent — an older Chess.com, a browser where `world: "MAIN"
 take — every consumer falls back to the page-scraping path below, which is exactly what
 shipped before it. The bridge can only add.
 
+## The cards this extension puts up
+
+The result card and the "who is to move?" question are built out of Chess.com's
+own modal classes - `game-over-modal-shell-content`, `-header-component`,
+`-title-component`, `cc-button-component` - because those classes are global and
+unscoped, which was measured rather than assumed: a node of ours parked in
+`<body>` wearing them computes to exactly what their own modal computes to, down
+to "Chess Sans" at 22px/700 for the title. Borrowing the class also follows their
+restyles and their theme, which a copied hex value never does.
+
+It stays a child of `<body>` and never enters their component tree. Inserting one
+node of ours into one of their Vue components is what took the whole board down
+once already.
+
+**The standing cost of that trick:** our own cards now match every selector that
+looks for THEIR game-over surfaces. So each of those is narrowed with
+`:not([data-sfct])` - `isGameOver()`, `findGameOverModal()`, and the style that
+hides their modal while you play - and every node inside a card carries the
+attribute, not just the card itself. Both mistakes were made in order and caught
+by the e2e run: the blocker hid our card, and then hid its insides, leaving a
+card of full width and no height.
+
+Where their stylesheet is not on the page at all - a fixture, or class names that
+have moved on again - `dressCardIfUnstyled()` measures what the card actually
+computed to and paints our own plain dark box instead. Inline styles outrank class
+rules, so it can only ever run when theirs did not.
+
 ## FEN extraction (fallback chain)
 
 Tried in order; the first that yields a position wins:

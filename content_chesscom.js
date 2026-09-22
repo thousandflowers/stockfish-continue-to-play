@@ -278,11 +278,16 @@ function removeGameOverModal() {
   if (document.getElementById('sfct-modal-blocker')) return;
   const s = document.createElement('style');
   s.id = 'sfct-modal-blocker';
+  // Every one of these is narrowed to THEIR nodes. Our own result card wears
+  // their modal classes on purpose, so that it looks like one of theirs - and
+  // the wildcard here promptly hid it, which the e2e run caught before a person
+  // ever had to. Same guard as the piece rule: ours carry data-sfct, theirs
+  // never do.
   s.textContent = [
     '.game-over-modal-shell', '.game-over-modal-component', '.game-over-modal-content',
     '.game-over-buttons-component', '.game-over-container', '[data-cy="game-over-dialog"]',
     '.game-result-component', '[class*="game-over-modal"]', '.board-modal-overlay',
-  ].join(',') + '{display:none!important}';
+  ].map(sel => sel + ':not([data-sfct])').join(',') + '{display:none!important}';
   document.head.appendChild(s);
 }
 
@@ -962,16 +967,24 @@ function centreOnBoard(el) {
 }
 
 // A full-width button in Chess.com's dialog style.
+// Their own button, worn rather than imitated. Measured on a live page: a button
+// of ours carrying cc-button-component computes to "Chess Sans" 17px/600 at
+// radius 10, with their green and the shadow that goes under it - the same
+// values their modal's own buttons carry. A class also follows their restyles
+// and their theme for free, which a copied hex value never does.
 function cardButton(text, primary) {
   const b = document.createElement('button');
   b.textContent = text;
-  Object.assign(b.style, {
-    width: '100%', minHeight: '44px', border: 'none', borderRadius: '8px',
-    fontSize: '15px', fontWeight: '700', cursor: 'pointer',
-    background: primary ? '#81b64c' : 'rgba(255,255,255,.09)',
-    color: primary ? '#fff' : 'rgba(255,255,255,.85)',
-    boxShadow: primary ? 'inset 0 -3px 0 rgba(0,0,0,.18)' : 'none',
-  });
+  // cc-button-MEDIUM, because that is the size their own game-over modal uses:
+  // measured on their Rematch button - 14px/600 at radius 5, 40px tall, and a
+  // transparent background whose fill arrives as an inset box-shadow. Large
+  // would have been "Chess Sans" at 17px and radius 10, which is their button
+  // but not the one that belongs in this card.
+  b.className = 'cc-button-component cc-button-medium ' +
+    (primary ? 'cc-button-primary cc-bg-primary' : 'cc-button-secondary cc-bg-secondary');
+  b.dataset.sfctPrimary = primary ? '1' : '0';
+  b.style.width = '100%';
+  b.style.cursor = 'pointer';
   return b;
 }
 
@@ -982,36 +995,114 @@ function makeCard(id, title, subtitle) {
   const old = document.getElementById(id);
   if (old) { old._sfctCleanup?.(); old.remove(); } // never orphan its listeners
   ensureAnimStyle();
+
+  // Their announcement modal, built out of their own class names. They are
+  // global and unscoped, and that was measured rather than hoped for: a node of
+  // ours parked in <body> wearing them computed to exactly what their own modal
+  // computes to - rgb(38,36,33) at radius 10 for the body, rgba(255,255,255,.1)
+  // for the header, "Chess Sans" 22px/700 for the title.
+  //
+  // It stays a child of <body> and never enters their component tree. Inserting
+  // a node of ours into one of their Vue components is what took the whole board
+  // down once already; wearing their clothes costs nothing and breaks nothing.
+  //
+  // Their shell is position:static, so it does not fight the fixed placement,
+  // which stays ours - the card is centred on the board, not where their layout
+  // would have put it.
   const card = document.createElement('div');
   card.id = id;
   card.setAttribute('data-sfct', 'card');
+  card.className = 'game-over-modal-shell-container';
   Object.assign(card.style, {
-    position: 'fixed', zIndex: '999998', width: 'min(330px,80vw)',
-    background: '#262421', borderRadius: '12px', overflow: 'hidden',
-    boxShadow: '0 12px 40px rgba(0,0,0,.6)', color: '#fff',
-    fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+    position: 'fixed', zIndex: '999998', maxWidth: '92vw',
     animation: '_sfctpop .18s ease-out',
   });
 
+  // Every node here is marked as ours, not just the outer card. They all wear
+  // their class names, and the rule that hides their modal narrows on this
+  // attribute - mark only the card and the blocker hides its insides instead,
+  // which is a card of full width and no height at all. The e2e run measured
+  // exactly that before this line existed.
+  const content = document.createElement('div');
+  content.className = 'game-over-modal-shell-content';
+  content.setAttribute('data-sfct', 'card-body');
+
   const head = document.createElement('div');
-  Object.assign(head.style, { background: '#302e2c', padding: '18px 20px', textAlign: 'center' });
+  head.className = 'game-over-modal-header-component';
+  head.setAttribute('data-sfct', 'card-head');
+  const inner = document.createElement('div');
+  inner.className = 'game-over-modal-header-inner';
+  inner.setAttribute('data-sfct', 'card-head-inner');
   const h = document.createElement('div');
+  h.className = 'game-over-modal-title-component';
+  h.setAttribute('data-sfct', 'card-title');
   h.textContent = title;
-  Object.assign(h.style, { fontSize: '22px', fontWeight: '700', lineHeight: '1.2' });
   const sub = document.createElement('div');
+  sub.className = 'game-over-modal-subtitle-component';
+  sub.setAttribute('data-sfct', 'card-subtitle');
   sub.textContent = subtitle;
-  Object.assign(sub.style, { fontSize: '13px', opacity: '.6', marginTop: '4px' });
-  head.append(h, sub);
+  inner.append(h, sub);
+  head.appendChild(inner);
 
   const body = document.createElement('div');
-  Object.assign(body.style, { padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: '8px' });
-  card.append(head, body);
-  return { card, body };
+  body.className = 'game-over-modal-shell-buttons';
+  body.setAttribute('data-sfct', 'card-buttons');
+
+  content.append(head, body);
+  card.appendChild(content);
+  return { card, body, content };
+}
+
+// Asked, not assumed: once the card is on the page, does it actually LOOK like
+// anything? Their stylesheet may not be there at all, and class names move -
+// this extension has watched game-result-component lose its suffix and
+// result-text become result-row. Without this the card would be a stack of
+// transparent divs, which is worse than the plain dark box it used to be.
+//
+// Only ever reached when their rules did not land: inline styles outrank class
+// rules, so there is no way for this to fight styling that did.
+const CARD_FALLBACK_BG = '#262421';
+const CARD_FALLBACK_HEAD_BG = '#302e2c';
+
+function dressCardIfUnstyled(card) {
+  const content = card.firstElementChild;
+  const bg = content && getComputedStyle(content).backgroundColor;
+  if (bg && !/rgba\(0, 0, 0, 0\)|transparent/.test(bg)) return false;
+
+  Object.assign(card.style, {
+    width: 'min(330px,80vw)', color: '#fff',
+    fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+  });
+  Object.assign(content.style, {
+    display: 'block', background: CARD_FALLBACK_BG, borderRadius: '12px',
+    overflow: 'hidden', boxShadow: '0 12px 40px rgba(0,0,0,.6)',
+  });
+  // Addressed by marker, never by position: the card gained a note under the
+  // button row, and "the last child" quietly became that note.
+  const at = (name) => card.querySelector('[data-sfct="' + name + '"]');
+  Object.assign(at('card-head').style, { background: CARD_FALLBACK_HEAD_BG, padding: '18px 20px', textAlign: 'center' });
+  Object.assign(at('card-title').style, { fontSize: '22px', fontWeight: '700', lineHeight: '1.2' });
+  Object.assign(at('card-subtitle').style, { fontSize: '13px', opacity: '.6', marginTop: '4px' });
+  Object.assign(at('card-buttons').style, {
+    padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: '8px',
+  });
+  for (const b of card.querySelectorAll('button')) {
+    const primary = b.dataset.sfctPrimary === '1';
+    Object.assign(b.style, {
+      minHeight: '44px', border: 'none', borderRadius: '8px',
+      fontSize: '15px', fontWeight: '700',
+      background: primary ? '#81b64c' : 'rgba(255,255,255,.09)',
+      color: primary ? '#fff' : 'rgba(255,255,255,.85)',
+      boxShadow: primary ? 'inset 0 -3px 0 rgba(0,0,0,.18)' : 'none',
+    });
+  }
+  return true;
 }
 
 // Put a card on screen, centred on the board and staying there.
 function showCard(card) {
   document.body.appendChild(card);
+  dressCardIfUnstyled(card);
   centreOnBoard(card);
   const reposition = () => centreOnBoard(card);
   window.addEventListener('resize', reposition);
@@ -1053,7 +1144,7 @@ function askSideToMove(onPick) {
 // `opts.rematch === false` drops the "play again" button: a position that was
 // already over when you picked it would lead straight back to this card.
 function showResultModal(title, subtitle, opts) {
-  const { card, body } = makeCard('sfct-result', title, subtitle || '');
+  const { card, body, content } = makeCard('sfct-result', title, subtitle || '');
   card.setAttribute('data-sfct', 'result');
   const replayable = opts?.rematch !== false;
   if (replayable) {
@@ -1063,12 +1154,22 @@ function showResultModal(title, subtitle, opts) {
   }
   const back = cardButton('Back to Chess.com', false);
   back.onclick = dismissResult;
+  body.appendChild(back);
+
+  // The note goes UNDER their button row, not inside it. Their row is a flex
+  // container with its own idea of what belongs in it, and a stray child of ours
+  // came out clipped against the bottom edge of the card - visible only by
+  // looking at the rendered card on a real page, which is why it was looked at.
   const note = document.createElement('div');
+  note.setAttribute('data-sfct', 'card-note');
   note.textContent = replayable
     ? 'The final position stays on the board until you leave.'
     : 'Go back, pick an earlier move, then Continue again.';
-  Object.assign(note.style, { fontSize: '11px', opacity: '.45', textAlign: 'center', marginTop: '2px' });
-  body.append(back, note);
+  Object.assign(note.style, {
+    fontSize: '12px', opacity: '.55', textAlign: 'center',
+    padding: '2px 16px 4px', color: '#fff',
+  });
+  content.appendChild(note);
   showCard(card);
 }
 

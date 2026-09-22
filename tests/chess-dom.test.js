@@ -286,6 +286,20 @@ describe('isGameOver', () => {
     document.body.appendChild(e);
     expect(d.isGameOver()).toBe(false);
   });
+  // Our own result card wears their modal classes on purpose, so that it looks
+  // like one of theirs. A surface of OURS must never be the evidence that THEIR
+  // game ended - that is a thing answering its own question.
+  it('false for our own card, however much it looks like theirs', () => {
+    const card = document.createElement('div');
+    card.className = 'game-over-modal-shell-container';
+    card.setAttribute('data-sfct', 'result');
+    const body = document.createElement('div');
+    body.className = 'game-over-modal-shell-content';
+    body.setAttribute('data-sfct', 'card-body');
+    card.appendChild(body);
+    document.body.appendChild(card);
+    expect(d.isGameOver()).toBe(false);
+  });
 });
 
 // ── computeSquareFromClick ───────────────────────────────────────────────────

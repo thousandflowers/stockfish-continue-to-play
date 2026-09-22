@@ -68,6 +68,31 @@ to the release its zips were published under.
 
 ### Fixed
 
+- **A draw left the popup with no button in it.** The trigger is placed the
+  moment a game reads as over, and Chess.com's result card is not on screen yet
+  when that happens - timed on a live drawn game, the game ended at 49 ms, the
+  button docked to the move-list column at 301 ms, and their popup only appeared
+  at 557 ms. The button was there the whole time, at the foot of the column,
+  while the card covering the board had none. It now moves into their card the
+  moment their card exists.
+- **The selected square was the right colour at twice the strength.** Chess.com
+  writes that highlight's paint inline on every square it marks, so wearing the
+  class alone gave the colour at full opacity instead of theirs. Their own marked
+  square is copied now, which also follows a board theme that changes the colour
+  rather than overriding it.
+- **Both kings kept the half-point badge for the whole continuation.** Their
+  end-of-game artwork sits on the board as its own layer, not as pieces, so
+  hiding their pieces left it painted over the new game. Hidden while you play,
+  and handed back untouched when you stop.
+- **Hovering a promotion choice rubbed the piece out.** The hover tint was
+  written as a background shorthand, which clears the sprite the piece is drawn
+  with.
+- **The end-of-game card belongs to the page now.** It was a hand-built box in a
+  system font that matched nothing around it; it wears Chess.com's own modal and
+  button classes instead, so it follows their styling and their theme. It stays
+  a node of ours in the page body and never enters their component tree - which
+  is the thing that takes the board down.
+
 - **No more queen nobody chose.** Two paths turned a promotion into a queen
   without asking: a `'q'` default in `toUci()`, and a fallback in the picker for
   when there was no board to hang it off. A promotion with nothing chosen is now
