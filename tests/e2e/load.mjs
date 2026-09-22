@@ -231,7 +231,7 @@ const restart = async () => {
         btn: b ? b.outerHTML.slice(0, 160) : null,
         btnDisplay: b ? getComputedStyle(b).display : null,
         modalDisplay: m ? getComputedStyle(m).display : null,
-        blocker: !!document.getElementById('sfct-modal-blocker'),
+        blocker: !!document.getElementById('sfct-board-style'),
         phase: document.documentElement.dataset.sfctPhase ?? null,
       };
     });

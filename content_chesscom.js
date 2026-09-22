@@ -272,24 +272,16 @@ function findActiveBoard() {
 // Hide only the specific Chess.com game-over surfaces (no wildcard removal, which
 // previously nuked unrelated UI). Interaction with the board still works because
 // our pointer listeners run in the capture phase.
-function removeGameOverModal() {
-  if (document.getElementById('sfct-modal-blocker')) return;
-  const s = document.createElement('style');
-  s.id = 'sfct-modal-blocker';
-  // Every one of these is narrowed to THEIR nodes. Our own result card wears
-  // their modal classes on purpose, so that it looks like one of theirs - and
-  // the wildcard here promptly hid it, which the e2e run caught before a person
-  // ever had to. Same guard as the piece rule: ours carry data-sfct, theirs
-  // never do.
-  s.textContent = [
-    '.game-over-modal-shell', '.game-over-modal-component', '.game-over-modal-content',
-    '.game-over-buttons-component', '.game-over-container', '[data-cy="game-over-dialog"]',
-    '.game-result-component', '[class*="game-over-modal"]', '.board-modal-overlay',
-  ].map(sel => sel + ':not([data-sfct])').join(',') + '{display:none!important}';
-  document.head.appendChild(s);
-}
+// Their game-over surfaces, hidden while a continuation plays. Every one is
+// narrowed to THEIR nodes: our result card wears their modal classes on purpose,
+// and the wildcard here once hid it - caught by the e2e run before a person ever
+// had to. Same guard as the piece rule: ours carry data-sfct, theirs never do.
+const THEIR_GAME_OVER = [
+  '.game-over-modal-shell', '.game-over-modal-component', '.game-over-modal-content',
+  '.game-over-buttons-component', '.game-over-container', '[data-cy="game-over-dialog"]',
+  '.game-result-component', '[class*="game-over-modal"]', '.board-modal-overlay',
+].map(sel => sel + ':not([data-sfct])').join(',');
 
-// ── Show / hide the inline board ─────────────────────────────────────────────
 function injectBoardStyle() {
   if (document.getElementById('sfct-board-style')) return;
   const bs = document.createElement('style');
@@ -328,6 +320,10 @@ function injectBoardStyle() {
       '_sfctshrink .25s cubic-bezier(.16,1,.3,1) .35s 1 normal forwards}',
     '@keyframes _sfctgrow{0%{transform:scale(.86)}100%{transform:scale(1.12)}}',
     '@keyframes _sfctshrink{0%{transform:scale(1.12)}100%{transform:scale(1)}}',
+    THEIR_GAME_OVER + '{display:none!important}',
+    // The result card's entrance.
+    '@keyframes _sfctpop{from{opacity:0;transform:translate(-50%,-50%) scale(.92)}' +
+      'to{opacity:1;transform:translate(-50%,-50%) scale(1)}}',
   ].join('');
   document.head.appendChild(bs);
 }
@@ -402,7 +398,6 @@ function labelOpponentAsEngine(label, rating) {
 function showChesscomBoard(fen, color, strengthSetting) {
   try {
     hideChesscomBoard();
-    removeGameOverModal();
 
     const [, fenSide, fenCastling = '-', fenEp = '-', fenHalf = '0'] = fen.split(' ');
     const sideToMove = fenSide || 'w';
@@ -521,7 +516,6 @@ function hideChesscomBoard() {
   if (chesscomState?._keyCleanup) chesscomState._keyCleanup();
   if (chesscomState?._refreshTimer) clearInterval(chesscomState._refreshTimer);
   releaseColumnFoot();
-  document.getElementById('sfct-modal-blocker')?.remove();
   // Dropping this un-hides Chess.com's own pieces again.
   document.getElementById('sfct-board-style')?.remove();
   chesscomState?._restoreOpponentName?.();
@@ -1176,14 +1170,6 @@ function showNotice(text) {
   }, NOTICE_MS);
 }
 
-function ensureAnimStyle() {
-  if (document.getElementById('sfctplay-style')) return;
-  const s = document.createElement('style');
-  s.id = 'sfctplay-style';
-  s.textContent = '@keyframes _sfctpop{from{opacity:0;transform:translate(-50%,-50%) scale(.92)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}';
-  document.head.appendChild(s);
-}
-
 // ── Result modal ─────────────────────────────────────────────────────────────
 // Chess.com announces a result with a card over the board, so this one looks
 // like that: same dark card, same green primary button, centred on the board.
@@ -1257,7 +1243,6 @@ function cardButton(text, primary, glyphName) {
 // Every node is marked as ours - the rule that hides their modal while we play
 // narrows on that attribute, and marking only the root hid the card's insides.
 function makeCard(title, subtitle) {
-  ensureAnimStyle();
   const el = (cls, parent) => {
     const n = document.createElement('div');
     n.className = cls;
