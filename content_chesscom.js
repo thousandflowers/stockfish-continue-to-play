@@ -433,7 +433,7 @@ function showChesscomBoard(fen, color, strengthSetting) {
     attachPointerHandlers();
     startRefreshTimer();
     chesscomState._restoreOpponentName = labelOpponentAsEngine('Stockfish', strength.label);
-    showStatusBadge(`Stockfish ${strength.label} · loading engine…`);
+    showStatusBadge('loading engine…');
     // Say plainly that a new game has started — the board looks the same as the
     // one that just ended, so without this it is not obvious anything changed.
     showBanner(`♟ New game vs Stockfish (${strength.label}) - you play ` +
@@ -446,7 +446,6 @@ function showChesscomBoard(fen, color, strengthSetting) {
         postCmd(`setoption name UCI_Elo value ${strength.uciElo}`);
       }
       postCmd(enginePosition());
-      chesscomState.engineLabel = strength.label;
       if (sideToMove === engineSide) engineThink();
       else { updateStatus('Your move'); requestLegalMoves(); }
     }).catch(e => {
@@ -1046,7 +1045,17 @@ function alignStatus() {
   const r = row?.getBoundingClientRect();
   const b = badge.getBoundingClientRect();
   if (r && r.width) {
-    badge.style.left = Math.max(4, r.right - b.width - 8) + 'px';
+    // The clock lives at the right-hand end of that row, so the row's own edge
+    // is the wrong boundary — the pill landed on top of it. Stop at whichever
+    // comes first.
+    let limit = r.right;
+    for (const c of document.querySelectorAll('[class*="clock"]')) {
+      const cr = c.getBoundingClientRect();
+      if (!cr.width) continue;
+      const overlapsRow = cr.bottom > r.top && cr.top < r.bottom;
+      if (overlapsRow && cr.left < limit) limit = cr.left;
+    }
+    badge.style.left = Math.max(4, limit - b.width - 8) + 'px';
     badge.style.top = Math.round(r.top + (r.height - b.height) / 2) + 'px';
     return;
   }
@@ -1058,8 +1067,8 @@ function alignStatus() {
 function updateStatus(text) {
   const el = document.getElementById('sfct-badge-text');
   if (!el) return;
-  const who = chesscomState?.engineLabel ? `Stockfish ${chesscomState.engineLabel} · ` : '';
-  el.textContent = '♟ ' + who + text;
+  // Just the state. Who you are playing is on the opponent's own card.
+  el.textContent = '♟ ' + text;
 }
 
 function ensureAnimStyle() {
@@ -1316,36 +1325,13 @@ function startContinuation(board, side, strength, fenFromPage) {
   showChesscomBoard(fen, bridgePlayerColor() || getPlayerColor(), strength);
 }
 
-// Build a button that mimics a Chess.com modal button when given a template.
-function makeNativeButton(template) {
-  const btn = document.createElement('button');
+// The trigger IS a Chess.com button: their classes, their shape, their states,
+// their theme. Copying a neighbour's className and stuffing our own spans into
+// it is what squashed this - their buttons are inline-grid today, and a flex
+// wrapper from an older generation of their markup collapses inside that grid.
+function makeNativeButton() {
+  const btn = cardButton('\u265F Continue vs Computer', false);
   btn.id = 'sfctplay-btn';
-  if (template?.className) {
-    btn.className = template.className;
-    btn.classList.remove('ui_v5-button-primary', 'cc-button-primary');
-    btn.classList.add('ui_v5-button-secondary', 'cc-button-secondary');
-  }
-  const wrap = document.createElement('span');
-  wrap.className = 'ui_v5-button-content-wrapper';
-  const label = document.createElement('span');
-  label.className = 'ui_v5-button-text';
-  label.textContent = '♟ Continue vs Computer';
-  wrap.appendChild(label);
-  btn.appendChild(wrap);
-  Object.assign(btn.style, {
-    display: 'inline-flex', justifyContent: 'center', alignItems: 'center',
-    minHeight: '48px', cursor: 'pointer', marginTop: '8px',
-  });
-  // No modal means no Chess.com button to borrow the look from, and the label
-  // would land as bare text on the dock. Paint it in their green instead.
-  if (!template?.className) {
-    Object.assign(btn.style, {
-      width: '100%', border: 'none', borderRadius: '8px', background: '#81b64c',
-      color: '#fff', fontSize: '15px', fontWeight: '700',
-      boxShadow: 'inset 0 -3px 0 rgba(0,0,0,.18)',
-      fontFamily: '-apple-system,BlinkMacSystemFont,sans-serif',
-    });
-  }
   btn.onclick = onContinueClick;
   return btn;
 }
@@ -1384,8 +1370,7 @@ function injectButtons() {
   // Line the trigger up under the anchor but keep the node in <body>: Chess.com
   // renders both surfaces with Vue, and inserting into them made Vue throw
   // "insertBefore … not a child of this node" on its next patch.
-  const btn = makeNativeButton(modal ? modalButtonAnchor(modal) : null);
-  btn.style.width = '100%';
+  const btn = makeNativeButton();
 
   // A strip that continues the surface above it: same width, same background,
   // rounded off at the bottom, sitting flush against it, so the two read as one
