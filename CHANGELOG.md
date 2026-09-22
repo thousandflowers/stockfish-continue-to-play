@@ -4,6 +4,176 @@ All notable changes to this project are documented here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html), and each entry links
 to the release its zips were published under.
 
+## [3.3.0] - 2026-09-23
+
+### Added
+
+- **The position now comes from Chess.com's own board.** A second script runs in
+  the page's own JavaScript world, where their board component is reachable, and
+  reads the position being shown straight from it - castling rights and the
+  en-passant square included, both of which had to be estimated when all this
+  extension could see was the piece divs. It reads and nothing else: no move, no
+  resign, no mode change, and the page world holds no extension permissions of
+  its own. Where it cannot reach - an older Chess.com, a browser that ignores
+  `world: "MAIN"` - everything falls back to the scraping that shipped before.
+- **The engine is calibrated on the opponent's real rating.** Their board names
+  both ratings outright, so a bot rated 300 is played as 300 instead of as
+  whichever rating-shaped number the page happened to show first.
+- **Continue from the position you are looking at, not only the one the game
+  ended on.** Walk back through the move list to the move where it went wrong
+  and press Continue from there: lose to a mate, rewind three moves, play it
+  differently. Still only ever after a game has ended - the trigger is gated on
+  the same game-over check as before, which has been tightened rather than
+  duplicated.
+- **The arrow keys walk the continuation.** ← and → step one move, ↑ jumps to
+  the position you continued from, ↓ back to the live one - Chess.com's own
+  keys, which used to walk their board hidden under ours, so nothing visible
+  moved. A click on the board while looking back returns to the present.
+- **A new icon**: the seahorse knight, every size derived from one master.
+- **Continued games can end in a draw.** A game here ended when the side to move
+  ran out of legal moves, which is checkmate and stalemate and nothing else.
+  Every other draw leaves legal moves on the board, so a continuation that
+  reached two bare kings simply carried on until you closed it. The fifty-move
+  rule, threefold repetition and insufficient material are now decided from the
+  move list, and only ever where the side to move is known to have a legal move
+  - mate outranks every draw, and a game that ends in mate on the hundredth
+  quiet move is mate.
+
+### Changed
+
+- **The side to move follows the selected ply.** The piece placement always came
+  from the board, which Chess.com re-renders as you navigate; only the turn was
+  still read off the end of the move list, so an earlier position came out with
+  the right pieces and the wrong player up. Three independent readings now agree
+  on it: the index of the selected ply, its colour class, and the board's
+  last-move highlight.
+- **The trigger docks under the move-list column when there is no game-over
+  card**, instead of falling through to a button floating over the window. A
+  finished game you came back to is exactly where the move list gets walked, and
+  there is no card there to hang off. The column is asked to be that much
+  shorter - a padding on their element, never a node inserted into it - so the
+  row of icons at its foot moves up rather than disappearing under the bar, and
+  is handed back untouched when the trigger goes.
+- **The viewed ply is read from the URL.** Chess.com writes it into the query
+  string (`?move=20`) and rewrites it on every click in the move list. Probing a
+  real finished game found no ply node carrying a "selected" class at all, so
+  this is now the first of the readings, with the move list and the board behind
+  it.
+- **The legal-move markers are Chess.com's own**, not an imitation: `hint`,
+  `capture-hint` and `highlight`, the same borrowing the pieces already do with
+  `.piece` for the sprite, so they follow a restyle for free. Their ring is
+  scaled to the board - the `5px` in their rule is a floor, a live board
+  computes 7.5px on an 86px square - so ours is scaled the same way rather than
+  coming out a third too thin. The checked king keeps its red glow, with
+  Chess.com's own grow / wiggle / shrink timings, played when the check arrives
+  instead of on every re-render.
+
+### Fixed
+
+- **Nothing of this extension sits on the page any more.** The status pill and
+  the "new game" banner are gone, and so is the card that used to stop the page
+  to ask whose move it was. A continuation announces itself the way a real game
+  does: Chess.com's own opponent row takes the engine's name, rating and face,
+  and gives them all back untouched when you leave. Esc ends a continuation. The
+  banner had a second sin worth naming - being fixed and ours, it swallowed the
+  first click of every continuation, because the extension's own handlers skip
+  the extension's own UI on purpose.
+- **The piece follows your finger.** There was no drag at all: the press and the
+  release were read, and nothing in between, so a piece only ever jumped to its
+  new square once the move was committed. It now travels with the cursor, hand
+  closed, with the move animation switched off while it is carried - measured on
+  a live board, the piece's centre sits exactly on the pointer. A press that
+  never travels is still a click.
+- **Move dots and the selected square stop outliving the move that made them.**
+  Two separate causes, both closed. Everything of ours was found among the
+  board's DIRECT children, so a Chess.com re-render that nested our nodes one
+  level deeper left them on screen and invisible to the code that removes them -
+  and the one-second watchdog, fooled the same way, painted a second set on top.
+  And the markers were cleared halfway through a function with no `catch`: a
+  throw anywhere above that line left them up for good. They are cleared first
+  now, before anything that can fail, and found anywhere under the board.
+- **A draw left the popup with no button in it.** The trigger is placed the
+  moment a game reads as over, and Chess.com's result card is not on screen yet
+  when that happens - timed on a live drawn game, the game ended at 49 ms, the
+  button docked to the move-list column at 301 ms, and their popup only appeared
+  at 557 ms. The button was there the whole time, at the foot of the column,
+  while the card covering the board had none. It now moves into their card the
+  moment their card exists.
+- **The selected square was the right colour at twice the strength.** Chess.com
+  writes that highlight's paint inline on every square it marks, so wearing the
+  class alone gave the colour at full opacity instead of theirs. Their own marked
+  square is copied now, which also follows a board theme that changes the colour
+  rather than overriding it.
+- **Both kings kept the half-point badge for the whole continuation.** Their
+  end-of-game artwork sits on the board as its own layer, not as pieces, so
+  hiding their pieces left it painted over the new game. Hidden while you play,
+  and handed back untouched when you stop.
+- **The promotion picker is Chess.com's own promotion window**, built the way
+  their board builds it: the white column, the close cross, the opening
+  animation, the scale under the pointer and the sprites of your piece theme.
+- **The end-of-game card is their v6 game-over modal, copied node for node** -
+  title, subtitle, their close cross, x-large buttons with their own glyphs.
+  Rendered beside theirs on a live page it computes identically, down to the
+  8px between icon and label. It stays a node of ours in the page body and never
+  enters their component tree - which is the thing that takes the board down.
+- **The trigger is one more button of their game-over card**, now labelled
+  **Keep Playing**. It docks over the foot of their card and takes the shape of
+  their buttons - whichever card it is: the v6 one, the bots' one, the signed-in
+  one with New and Rematch side by side - and re-reads it on every tick, so a
+  card whose buttons arrive late no longer leaves it small.
+- **A clicked piece no longer sinks under its own selected square.** Releasing
+  it stripped its stacking order, and their piece class computes none.
+- **Text written into Chess.com's nodes no longer goes missing.** Replacing a
+  node's text swapped out the text node their framework keeps patching; after a
+  page change without a reload, words could land off screen. The existing text
+  node is written instead.
+
+- **No more queen nobody chose.** Two paths turned a promotion into a queen
+  without asking: a `'q'` default in `toUci()`, and a fallback in the picker for
+  when there was no board to hang it off. A promotion with nothing chosen is now
+  not a move at all, and you are asked again.
+- **You can see the legal-move markers, including on captures.** The dot was
+  flat 18% black, which disappears on Chess.com's dark squares, and it sat
+  BEHIND the pieces - so a capture destination, the one you most want to see,
+  was covered by the piece standing on it. Markers now sit above the pieces,
+  carry a pale rim so they read on light and dark squares alike, and a square
+  with a piece on it gets a ring around the piece instead of a dot under it.
+- **A king-versus-king ending can be continued.** The scraper rejected anything
+  with fewer than three pieces as noise, so the most obviously drawn position on
+  the board answered "Position not found." The guard is now that both kings are
+  present, which is what actually tells a position from a stray match.
+- **The trigger appears on a finished game whose result modal is gone.** It
+  looked for `.game-result-component` and `result-text`; Chess.com dropped the
+  `-component` suffix and renamed the other to `result-row`, so on a game you
+  came back to nothing matched and the page read as "no game has ended here".
+  Matched on the durable `game-result` / `game-review` shapes now, with both
+  surfaces' class vocabularies pinned in a test - the trigger must be possible
+  on a finished game and impossible on one in progress.
+- **The engine is calibrated on your opponent, never on you.** When the player
+  row could not be matched, the opponent's rating fell back to the largest
+  rating on the page - which against anyone weaker than you is your own. Both
+  rows are found together now and the opponent is whichever is not yours, with
+  the "You" tag deciding when game review has reset the orientation.
+- **Walking the move list no longer counts as leaving the page.** The
+  navigation poller compared the whole URL, and Chess.com rewrites `?move=` on
+  every click - so glancing at an earlier move during a continuation would have
+  torn the game down.
+- **Captures en passant are possible again.** The scraped FEN carried a hardcoded
+  "-" in the en-passant field, so Stockfish never generated the capture and the
+  move came back refused. The two squares Chess.com highlights for the last move
+  give the target exactly. It stays "-" if you have switched Chess.com's move
+  highlighting off.
+- **A hidden game-over surface no longer counts as a finished game.** The check
+  asked only whether a matching node existed, so one left mounted after a
+  rematch could put the trigger up over a live board.
+- **The position is read off the board the game is played on.** It was taken
+  from the first board in the document while play happened on the largest
+  visible one - a difference only a page with two boards can show, and a review
+  page is such a page.
+- **A position that is already checkmate or stalemate says so**, rather than
+  announcing the result of a game that never started, and does not offer to play
+  it again.
+
 ## [3.2.1] - 2026-09-04
 
 ### Changed
@@ -111,6 +281,8 @@ on Lichess to play out, which 3.1.0 replaced entirely. Releases in this line dea
 with the Lichess handoff: posting the position directly, `variant=FromPosition` for
 custom positions, and CSRF tokens on the request.
 
+[3.3.0]: https://github.com/thousandflowers/stockfish-continue-to-play/releases/tag/v3.3.0
+[3.2.1]: https://github.com/thousandflowers/stockfish-continue-to-play/releases/tag/v3.2.1
 [3.2.0]: https://github.com/thousandflowers/stockfish-continue-to-play/releases/tag/v3.2.0
 [3.1.2]: https://github.com/thousandflowers/stockfish-continue-to-play/releases/tag/v3.1.2
 [3.1.1]: https://github.com/thousandflowers/stockfish-continue-to-play/releases/tag/v3.1.1

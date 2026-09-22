@@ -174,7 +174,7 @@ gh secret set AMO_JWT_SECRET
 After that, cutting a release is:
 
 ```bash
-# bump manifest.json + manifest-firefox.json, write the CHANGELOG entry, merge
+# bump manifest.json + package.json, write the CHANGELOG entry, merge
 git tag v3.3.0 && git push origin v3.3.0
 ```
 
@@ -244,6 +244,6 @@ warning that changes nothing. Revisit when 140 is old enough not to matter.
 - Put the store links in `README.md`, replacing the "not yet published" note.
 - Chrome auto-updates from the store; the GitHub release stays as the
   install-from-source path.
-- Every later version needs the version bumped in `manifest.json`,
-  `manifest-firefox.json` and `package.json` together - `npm run package` reads
+- Every later version needs the version bumped in `manifest.json`
+  and `package.json` together - `npm run package` reads
   the first one, and a mismatch ships a zip whose name lies about its contents.

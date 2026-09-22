@@ -58,8 +58,8 @@ To rebuild the reviewed package from this source:
     npm install          # devDependencies only: vitest, jsdom, playwright. Not shipped.
     npm run package      # writes stockfish-continue-to-play-firefox-<version>.zip
 
-scripts/package.sh lists every packaged path explicitly and renames manifest-firefox.json to
-manifest.json inside the Firefox zip. Nothing in node_modules, tests/ or scripts/ is
+scripts/package.sh lists every packaged path explicitly and writes the Firefox zip's
+manifest.json with scripts/firefox-manifest.py, derived from manifest.json. Nothing in node_modules, tests/ or scripts/ is
 packaged.
 
 Build environment: Node 20 or later, bash, zip, python3 (used only to read the version out

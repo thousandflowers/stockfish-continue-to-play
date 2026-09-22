@@ -15,13 +15,13 @@
 ## The problem
 
 You're winning. Your opponent resigns, disconnects, or times out. Game over - but you
-wanted to play it through. This extension adds a **Continue vs Computer** button to the
+wanted to play it through. This extension adds a **Keep Playing** button to the
 game-over screen. Click it and you keep playing the exact final position against
 Stockfish, right there on the Chess.com board, with difficulty matched to your
 opponent's rating.
 
 ```
-Chess.com: Game Over  →  [♟ Continue vs Computer]  →  play the position vs Stockfish (inline)
+Chess.com: Game Over  →  [▶ Keep Playing]  →  play the position vs Stockfish (inline)
 ```
 
 ---
@@ -40,6 +40,7 @@ in-page, so the game never leaves Chess.com.
 ## Features
 
 - **Inline on the real board** - no redirect, no new tab; you keep playing on the Chess.com board you were already on.
+- **From any position, not just the last one** - walk back through the move list to where it went wrong and continue from there. Lose to a mate, rewind three moves, play it differently. Only ever after a game has ended.
 - **Adaptive difficulty** - Stockfish's `UCI_Elo` is matched to the opponent's rating read from the page.
 - **No servers, no telemetry** - Stockfish runs entirely in your browser, as WebAssembly. Nothing is uploaded; it works offline, and that is verified by the test suite, not just claimed.
 - **Click or drag** - move pieces either way, with legal destinations highlighted. Promotion opens the same four-piece picker Chess.com uses, and you castle the way you already do there: drop the king on your own rook.
@@ -88,9 +89,9 @@ bash scripts/download-stockfish.sh
 # 3a. Chrome / Edge / Brave / Arc / Opera
 #     chrome://extensions → enable "Developer mode" → "Load unpacked" → pick this folder
 
-# 3b. Firefox 128+ uses a separate manifest - swap it in first
-#     cp manifest-firefox.json manifest.json
-#     about:debugging#/runtime/this-firefox → "Load Temporary Add-on" → pick manifest.json
+# 3b. Firefox 128+ needs its own manifest, which the build derives
+#     npm run package
+#     about:debugging#/runtime/this-firefox → "Load Temporary Add-on" → pick stockfish-continue-to-play-firefox-*.zip
 ```
 
 > The engine - `stockfish.js` (21 KB loader) and `stockfish.wasm` (7 MB) - is excluded
@@ -102,7 +103,8 @@ bash scripts/download-stockfish.sh
 ## How to use
 
 1. Finish (or lose/win) a game on Chess.com.
-2. On the game-over screen, click **♟ Continue vs Computer**.
+2. Click **▶ Keep Playing** - on the game-over card, or under the move list when you have come back to a finished game later.
+   To start from an earlier position, walk back through the move list first: the button plays whatever is on the board when you press it.
 3. Play. The badge in the top-right shows whose turn it is; click it to stop.
 
 ---

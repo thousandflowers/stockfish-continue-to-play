@@ -40,9 +40,9 @@ describe('isPromotion / toUci', () => {
     expect(c.isPromotion(b, 'h2', 'h1')).toBe(true);
     expect(c.isPromotion(b, 'e1', 'e2')).toBe(false);
   });
-  it('queens by default, honours an explicit choice', () => {
+  it('needs a choice for a promotion, and honours it', () => {
     const b = pawns();
-    expect(c.toUci(b, 'a7', 'a8')).toBe('a7a8q');
+    expect(c.toUci(b, 'a7', 'a8')).toBeNull();
     expect(c.toUci(b, 'a7', 'a8', 'n')).toBe('a7a8n');
     expect(c.toUci(b, 'e1', 'e2', 'n')).toBe('e1e2'); // not a promotion, no suffix
   });
@@ -179,8 +179,19 @@ describe('applyUciMove', () => {
 
 describe('toUci', () => {
   it('plain move', () => { expect(c.toUci({ e2: 'P' }, 'e2', 'e4')).toBe('e2e4'); });
-  it('auto-queens a white promotion', () => { expect(c.toUci({ e7: 'P' }, 'e7', 'e8')).toBe('e7e8q'); });
-  it('auto-queens a black promotion', () => { expect(c.toUci({ e2: 'p' }, 'e2', 'e1')).toBe('e2e1q'); });
+  // No queen default. A promotion with nothing chosen is not a move: the
+  // caller has to ask the player first, and the picker is the only way a
+  // piece gets picked.
+  it('refuses a white promotion with no piece chosen', () => {
+    expect(c.toUci({ e7: 'P' }, 'e7', 'e8')).toBeNull();
+  });
+  it('refuses a black promotion with no piece chosen', () => {
+    expect(c.toUci({ e2: 'p' }, 'e2', 'e1')).toBeNull();
+  });
+  it.each(['q', 'r', 'b', 'n'])('carries the chosen piece through (%s)', (p) => {
+    expect(c.toUci({ e7: 'P' }, 'e7', 'e8', p)).toBe('e7e8' + p);
+    expect(c.toUci({ e2: 'p' }, 'e2', 'e1', p)).toBe('e2e1' + p);
+  });
   it('no promo for a non-pawn reaching the back rank', () => {
     expect(c.toUci({ e7: 'R' }, 'e7', 'e8')).toBe('e7e8');
   });
@@ -212,5 +223,105 @@ describe('parsePerftMove', () => {
     expect(c.parsePerftMove('Nodes searched: 20')).toBeNull();
     expect(c.parsePerftMove('info depth 1 seldepth 1')).toBeNull();
     expect(c.parsePerftMove('')).toBeNull();
+  });
+});
+
+// ── Draws ────────────────────────────────────────────────────────────────────
+// Everything below exists because a game here only ends when the side to move
+// has no legal move. Mate and stalemate do that; no other draw does, so a
+// continuation that reached a dead endgame used to run forever.
+describe('castlingAfter', () => {
+  it('a king move kills both of its own rights and neither of the enemy’s', () => {
+    expect(c.castlingAfter('KQkq', { from: 'e1', to: 'e2', piece: 'K' })).toBe('kq');
+    expect(c.castlingAfter('KQkq', { from: 'e8', to: 'e7', piece: 'k' })).toBe('KQ');
+  });
+  it('a rook leaving home kills that side only', () => {
+    expect(c.castlingAfter('KQkq', { from: 'h1', to: 'h5', piece: 'R' })).toBe('Qkq');
+    expect(c.castlingAfter('KQkq', { from: 'a8', to: 'a5', piece: 'r' })).toBe('KQk');
+  });
+  it('capturing on a rook’s home square kills that right', () => {
+    expect(c.castlingAfter('KQkq', { from: 'a1', to: 'a8', piece: 'R' })).toBe('Kk');
+  });
+  it('castling itself leaves nothing for that colour', () => {
+    expect(c.castlingAfter('KQkq', { from: 'e1', to: 'g1', piece: 'K' })).toBe('kq');
+  });
+  it('a dash stays a dash', () => {
+    expect(c.castlingAfter('-', { from: 'e2', to: 'e4', piece: 'P' })).toBe('-');
+  });
+});
+
+describe('enPassantAfter', () => {
+  it('a double push exposes the square it stepped over', () => {
+    expect(c.enPassantAfter({ piece: 'P', from: 'e2', to: 'e4' })).toBe('e3');
+    expect(c.enPassantAfter({ piece: 'p', from: 'd7', to: 'd5' })).toBe('d6');
+  });
+  it('a single push exposes nothing', () => {
+    expect(c.enPassantAfter({ piece: 'P', from: 'e3', to: 'e4' })).toBe('-');
+  });
+  it('a piece moving two ranks is not a pawn push', () => {
+    expect(c.enPassantAfter({ piece: 'R', from: 'e2', to: 'e4' })).toBe('-');
+  });
+});
+
+describe('positionKey', () => {
+  const board = { e1: 'K', e8: 'k' };
+  it('the same placement with different rights is a different position', () => {
+    expect(c.positionKey(board, 'w', 'KQ', '-')).not.toBe(c.positionKey(board, 'w', '-', '-'));
+  });
+  it('the same placement with the other side to move is a different position', () => {
+    expect(c.positionKey(board, 'w', '-', '-')).not.toBe(c.positionKey(board, 'b', '-', '-'));
+  });
+  it('an en-passant square makes it a different position', () => {
+    expect(c.positionKey(board, 'w', '-', 'e3')).not.toBe(c.positionKey(board, 'w', '-', '-'));
+  });
+  it('key order does not depend on how the map was built', () => {
+    expect(c.positionKey({ e8: 'k', e1: 'K' }, 'w', '-', '-')).toBe(c.positionKey(board, 'w', '-', '-'));
+  });
+});
+
+describe('isInsufficientMaterial', () => {
+  it('bare kings', () => { expect(c.isInsufficientMaterial({ e1: 'K', e8: 'k' })).toBe(true); });
+  it('king and one bishop', () => { expect(c.isInsufficientMaterial({ e1: 'K', c1: 'B', e8: 'k' })).toBe(true); });
+  it('king and one knight', () => { expect(c.isInsufficientMaterial({ e1: 'K', b1: 'N', e8: 'k' })).toBe(true); });
+  it('opposite bishops on the same colour cannot mate', () => {
+    // c1 and f8 are both dark squares
+    expect(c.isInsufficientMaterial({ e1: 'K', c1: 'B', e8: 'k', f8: 'b' })).toBe(true);
+  });
+  it('bishops on opposite colours can still mate', () => {
+    // c1 dark, c8 light
+    expect(c.isInsufficientMaterial({ e1: 'K', c1: 'B', e8: 'k', c8: 'b' })).toBe(false);
+  });
+  it('a single pawn is enough', () => {
+    expect(c.isInsufficientMaterial({ e1: 'K', a2: 'P', e8: 'k' })).toBe(false);
+  });
+  it('a rook is enough', () => { expect(c.isInsufficientMaterial({ e1: 'K', a1: 'R', e8: 'k' })).toBe(false); });
+  it('two knights are not an automatic draw', () => {
+    expect(c.isInsufficientMaterial({ e1: 'K', b1: 'N', g1: 'N', e8: 'k' })).toBe(false);
+  });
+});
+
+// Header shapes below are copied from a live probe, not invented: a bot game on
+// /play/computer while logged out, and a finished live game on /game/live/.
+describe('eloFromHeaders', () => {
+  const BOT = { Event: 'Play vs Bot', White: 'null', Black: 'Cliff - Triangle', Result: '*', BlackElo: '300', WhiteElo: 'null' };
+  const LIVE = { White: 'Hikaru', Black: 'poohineedyou', Result: '1-0', WhiteElo: '3370', BlackElo: '2997' };
+
+  it('reads the opponent, never the player', () => {
+    expect(c.eloFromHeaders(BOT, 'w')).toBe(300);
+    expect(c.eloFromHeaders(LIVE, 'w')).toBe(2997);
+    expect(c.eloFromHeaders(LIVE, 'b')).toBe(3370);
+  });
+
+  it('a logged-out player has no rating, and it arrives as the string "null"', () => {
+    expect(c.eloFromHeaders(BOT, 'b')).toBe(null);
+  });
+
+  it('gives up rather than guessing', () => {
+    expect(c.eloFromHeaders(null, 'w')).toBe(null);
+    expect(c.eloFromHeaders({}, 'w')).toBe(null);
+    expect(c.eloFromHeaders(LIVE, undefined)).toBe(null);
+    expect(c.eloFromHeaders(LIVE, 'white')).toBe(null);
+    expect(c.eloFromHeaders({ WhiteElo: '0', BlackElo: '-5' }, 'w')).toBe(null);
+    expect(c.eloFromHeaders({ BlackElo: 2997 }, 'w')).toBe(2997);
   });
 });

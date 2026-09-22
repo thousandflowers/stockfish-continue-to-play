@@ -20,7 +20,7 @@ describe('popup', () => {
 
   it('names the injected button exactly as the content script does', () => {
     const content = readFileSync(path.join(root, 'content_chesscom.js'), 'utf8');
-    const label = content.match(/textContent = '♟ (Continue vs [^']+)'/)?.[1];
+    const label = content.match(/cardButton\('([^']+)', false, 'media-control-play'\)/)?.[1];
     expect(label).toBeTruthy();
     expect(html).toContain(`"${label}"`);
   });

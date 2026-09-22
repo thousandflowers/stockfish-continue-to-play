@@ -60,10 +60,17 @@ describe('buildFENFromPieces', () => {
   it('null with no pieces', () => {
     expect(d.buildFENFromPieces(document.createElement('div'))).toBeNull();
   });
-  it('null below the 3-piece noise guard', () => {
+  it('null when a king is missing - that is what noise looks like', () => {
     const root = document.createElement('div');
-    root.append(piece('piece wk square-11'), piece('piece bk square-88'));
+    root.append(piece('piece wp square-11'), piece('piece bp square-88'), piece('piece wr square-44'));
     expect(d.buildFENFromPieces(root)).toBeNull();
+  });
+  it('two bare kings ARE a position, and a drawn one', () => {
+    // The old count-based guard rejected this, so continuing from a bare-kings
+    // ending said "Position not found" instead of "Already a draw".
+    const root = document.createElement('div');
+    root.append(piece('piece wk square-51'), piece('piece bk square-58'));
+    expect(d.buildFENFromPieces(root)).toBe('4k3/8/8/8/8/8/8/4K3');
   });
   it('parses the start position', () => {
     const root = document.createElement('div');
@@ -163,14 +170,6 @@ describe('fixture: chesscom-gameover-real-modal (captured from live chess.com)',
   it('finds the modal', () => {
     expect(d.findGameOverModal()?.className).toContain('game-over-modal-shell-container');
   });
-  it('anchors next to Chess.com\'s own button, not the close X', () => {
-    const a = d.modalButtonAnchor(d.findGameOverModal());
-    expect(a.getAttribute('aria-label')).toBe('New Game');
-  });
-  it('anchor is inside the modal button row, so our trigger lands there too', () => {
-    const a = d.modalButtonAnchor(d.findGameOverModal());
-    expect(a.parentElement.className).toContain('game-over-modal-shell-buttons');
-  });
 });
 
 // ── averageMoveSeconds ───────────────────────────────────────────────────────
@@ -204,27 +203,27 @@ describe('averageMoveSeconds', () => {
   it('reads tenths', () => { expect(d.parseClock('0:59.4')).toBeCloseTo(59.4, 1); });
 });
 
-// ── getTurnFromMoveList ──────────────────────────────────────────────────────
+// ── readSideToMove, from the move list ──────────────────────────────────────────────────────
 // Shapes taken from a live chess.com analysis board, not invented.
-describe('getTurnFromMoveList', () => {
+describe('readSideToMove from the move list', () => {
   afterEach(() => { document.body.innerHTML = ''; });
   const movelist = (...plies) => {
     document.body.innerHTML = '<div class="analysis-view-movelist move-list">' +
       plies.map((san, i) => `<div class="node ${i % 2 ? 'black' : 'white'}-move main-line-ply">${san}</div>`).join('') +
       '</div>';
   };
-  it('white by default with no move list', () => { expect(d.getTurnFromMoveList()).toBe('w'); });
-  it('black to move after White played', () => { movelist('e4'); expect(d.getTurnFromMoveList()).toBe('b'); });
-  it('white to move after Black replied', () => { movelist('e4', 'e5'); expect(d.getTurnFromMoveList()).toBe('w'); });
+  it('nothing to say with no move list', () => { expect(d.readSideToMove()).toBeNull(); });
+  it('black to move after White played', () => { movelist('e4'); expect(d.readSideToMove()).toBe('b'); });
+  it('white to move after Black replied', () => { movelist('e4', 'e5'); expect(d.readSideToMove()).toBe('w'); });
   it('black to move again on the next White move', () => {
-    movelist('e4', 'e5', 'Nf3'); expect(d.getTurnFromMoveList()).toBe('b');
+    movelist('e4', 'e5', 'Nf3'); expect(d.readSideToMove()).toBe('b');
   });
   it('falls back to the last-move highlight when there is no move list', () => {
     const b = document.createElement('wc-chess-board');
     b.innerHTML = '<div class="highlight square-52"></div><div class="highlight square-54"></div>' +
                   '<div class="piece wp square-54"></div>';
     document.body.appendChild(b);
-    expect(d.getTurnFromMoveList()).toBe('b'); // a white pawn just landed there
+    expect(d.readSideToMove()).toBe('b'); // a white pawn just landed there
   });
 });
 
@@ -279,6 +278,112 @@ describe('isGameOver', () => {
     document.body.appendChild(e);
     expect(d.isGameOver()).toBe(false);
   });
+  // Our own result card wears their modal classes on purpose, so that it looks
+  // like one of theirs. A surface of OURS must never be the evidence that THEIR
+  // game ended - that is a thing answering its own question.
+  it('false for our own card, however much it looks like theirs', () => {
+    const card = document.createElement('div');
+    card.className = 'game-over-modal-shell-container';
+    card.setAttribute('data-sfct', 'result');
+    const body = document.createElement('div');
+    body.className = 'game-over-modal-shell-content';
+    body.setAttribute('data-sfct', 'card-body');
+    card.appendChild(body);
+    document.body.appendChild(card);
+    expect(d.isGameOver()).toBe(false);
+  });
+});
+
+// ── opponentTextSlot: the one node whose text we may rewrite ────────────────
+describe('opponentTextSlot', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  const rows = (top, bottom) =>
+    `<div class="player-row-component player-row-top">${top}</div>` +
+    `<div class="player-row-component player-row-bottom">${bottom}<span class="user-tagline-you">You</span></div>`;
+
+  it('finds the opponent name node', () => {
+    document.body.innerHTML = rows('<span class="user-username">poohineedyou</span>', '<span class="user-username">me</span>');
+    const el = d.opponentTextSlot();
+    expect(el?.textContent).toBe('poohineedyou');
+  });
+
+  // Writing textContent on a node that has ELEMENT children deletes those
+  // children. Chess.com renders these rows with Vue, and its next patch then
+  // throws "insertBefore … not a child of this node" and takes the board down
+  // with it. That crash has already been paid for once, on 2026-09-22.
+  it('refuses a node that owns element children', () => {
+    document.body.innerHTML = rows(
+      '<div class="user-tagline-component"><span class="flag"></span><span>poohineedyou</span></div>',
+      '<span class="user-username">me</span>');
+    const el = d.opponentTextSlot();
+    expect(el && el.children.length).toBe(0);
+    expect(el?.textContent).toBe('poohineedyou');
+  });
+
+  it('returns null rather than guess when no leaf carries a name', () => {
+    document.body.innerHTML = rows('<div class="user-tagline-component"><img src="x"><span class="flag"></span></div>', '<span class="user-username">me</span>');
+    expect(d.opponentTextSlot()).toBe(null);
+  });
+
+  // The shape that actually shipped broken: their rating span carries the
+  // tagline class too, and sits after the username.
+  it('is not fooled by a rating span that also matches the tagline pattern', () => {
+    document.body.innerHTML = rows(
+      '<span class="user-username">poohineedyou</span><span class="user-tagline-rating">2997</span>',
+      '<span class="user-username">me</span>');
+    expect(d.opponentTextSlot()?.textContent).toBe('poohineedyou');
+  });
+
+  it('returns null when there is no player row at all', () => {
+    document.body.innerHTML = '<div class="nothing"></div>';
+    expect(d.opponentTextSlot()).toBe(null);
+  });
+});
+
+describe('opponentRatingSlot', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  it('finds the opponent rating, not the player one', () => {
+    document.body.innerHTML =
+      '<div class="player-row-component player-row-top"><span class="user-username">them</span><span class="rating">(2997)</span></div>' +
+      '<div class="player-row-component player-row-bottom"><span class="user-tagline-you">You</span><span class="rating">(1400)</span></div>';
+    expect(d.opponentRatingSlot()?.textContent).toBe('(2997)');
+  });
+  it('returns null when the row shows no rating', () => {
+    document.body.innerHTML =
+      '<div class="player-row-component player-row-top"><span class="user-username">them</span></div>' +
+      '<div class="player-row-component player-row-bottom"><span class="user-tagline-you">You</span></div>';
+    expect(d.opponentRatingSlot()).toBe(null);
+  });
+});
+
+// ── ours: finding our own nodes after Chess.com has moved them ───────────────
+describe('ours', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+
+  it('finds a marker that is a direct child, as before', () => {
+    document.body.innerHTML = '<div id="b"><div data-sfct="dot"></div></div>';
+    expect(d.ours(document.getElementById('b'), 'dot').length).toBe(1);
+  });
+
+  // The bug this exists for: nothing of ours ever reparents itself, but a
+  // Chess.com re-render that rebuilds its own child list carries our appended
+  // siblings down a level with it. `:scope >` then stops seeing them, so the
+  // line that removes them never can either - a yellow square and a set of dots
+  // that outlive the move that made them, for the rest of the game.
+  it('finds a marker Chess.com has nested one level deeper', () => {
+    document.body.innerHTML = '<div id="b"><div class="theirs"><div data-sfct="dot"></div></div></div>';
+    expect(d.ours(document.getElementById('b'), 'dot').length).toBe(1);
+  });
+
+  it('matches the kind exactly, never a longer name', () => {
+    document.body.innerHTML = '<div id="b"><div data-sfct="promo-piece"></div><div data-sfct="piece"></div></div>';
+    expect(d.ours(document.getElementById('b'), 'piece').length).toBe(1);
+  });
+
+  it('counts nothing when there is nothing of ours', () => {
+    document.body.innerHTML = '<div id="b"><div class="piece wq square-11"></div></div>';
+    expect(d.ours(document.getElementById('b'), 'piece').length).toBe(0);
+  });
 });
 
 // ── computeSquareFromClick ───────────────────────────────────────────────────
@@ -293,4 +398,506 @@ describe('computeSquareFromClick', () => {
   it('bottom-left is a1 (not flipped)', () => { expect(d.computeSquareFromClick(board(false), 50, 750)).toBe('a1'); });
   it('top-left is h1 (flipped)', () => { expect(d.computeSquareFromClick(board(true), 50, 50)).toBe('h1'); });
   it('null outside the board', () => { expect(d.computeSquareFromClick(board(false), 900, 50)).toBeNull(); });
+});
+
+// ── readSideToMove ───────────────────────────────────────────────────────────
+// Navigating the move list after a game is the whole point of "continue from
+// the position on the board", so the side to move has to follow the SELECTED
+// ply, not the last one played.
+describe('readSideToMove', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+
+  // `sel` is the index of the ply Chess.com is showing, -1 for none marked.
+  const movelist = (plies, sel = -1) => {
+    document.body.innerHTML = '<div class="analysis-view-movelist move-list">' +
+      plies.map((san, i) => `<div class="node ${i % 2 ? 'black' : 'white'}-move main-line-ply` +
+        `${i === sel ? ' selected' : ''}">${san}</div>`).join('') +
+      '</div>';
+  };
+  const highlight = (from, to, pieceClass) => {
+    const b = document.createElement('wc-chess-board');
+    b.innerHTML = `<div class="highlight square-${from}"></div><div class="highlight square-${to}"></div>` +
+                  `<div class="piece ${pieceClass} square-${to}"></div>`;
+    document.body.appendChild(b);
+  };
+
+  it('black is up when the selected ply is White’s', () => {
+    movelist(['e4', 'e5', 'Nf3', 'Nc6', 'Bb5'], 2); // 3rd ply, White played Nf3
+    expect(d.readSideToMove()).toBe('b');
+  });
+  it('white is up when the selected ply is Black’s', () => {
+    movelist(['e4', 'e5', 'Nf3', 'Nc6', 'Bb5'], 3); // 4th ply, Black played Nc6
+    expect(d.readSideToMove()).toBe('w');
+  });
+  it('the selected ply wins over the last one played', () => {
+    movelist(['e4', 'e5', 'Nf3', 'Nc6'], 0); // scrubbed back to right after 1. e4
+    expect(d.readSideToMove()).toBe('b');
+  });
+  it('reads a selection marked with aria-selected', () => {
+    movelist(['e4', 'e5', 'Nf3']);
+    document.querySelectorAll('.node')[1].setAttribute('aria-selected', 'true');
+    expect(d.readSideToMove()).toBe('w');
+  });
+  it('index parity decides when the colour classes are gone', () => {
+    document.body.innerHTML = '<div class="move-list">' +
+      ['e4', 'e5', 'Nf3'].map((s, i) => `<div class="main-line-ply${i === 1 ? ' selected' : ''}">${s}</div>`).join('') +
+      '</div>';
+    expect(d.readSideToMove()).toBe('w'); // ply 2 was Black's
+  });
+  it('the board breaks a tie between index and colour class', () => {
+    document.body.innerHTML = '<div class="move-list">' +
+      '<div class="node white-move main-line-ply">e4</div>' +
+      '<div class="node white-move main-line-ply selected">e5</div>' + // mislabelled
+      '</div>';
+    highlight('57', '55', 'bp'); // a black pawn landed on e5, so White is up
+    expect(d.readSideToMove()).toBe('w');
+  });
+  it('null when index and colour class disagree and the board is silent', () => {
+    document.body.innerHTML = '<div class="move-list">' +
+      '<div class="node white-move main-line-ply">e4</div>' +
+      '<div class="node white-move main-line-ply selected">e5</div>' +
+      '</div>';
+    expect(d.readSideToMove()).toBeNull();
+  });
+  it('with nothing marked the board wins over the end of the list', () => {
+    movelist(['e4', 'e5', 'Nf3', 'Nc6']); // list says White is up
+    highlight('52', '54', 'wp');          // board shows a white pawn just landed
+    expect(d.readSideToMove()).toBe('b');
+  });
+  it('falls back to the end of the list when nothing else is readable', () => {
+    movelist(['e4', 'e5', 'Nf3']);
+    expect(d.readSideToMove()).toBe('b');
+  });
+  it('null on a page with no move list and no board', () => {
+    expect(d.readSideToMove()).toBeNull();
+  });
+  it('a scraped FEN still defaults to white when the side cannot be read', () => {
+    const b = document.createElement('wc-chess-board');
+    b.innerHTML = '<div class="piece wk square-51"></div><div class="piece bk square-58"></div>';
+    document.body.appendChild(b);
+    expect(d.getFEN().split(' ')[1]).toBe('w');
+  });
+  it('ignores our own overlay pieces when reading the highlight', () => {
+    const b = document.createElement('wc-chess-board');
+    b.innerHTML = '<div class="highlight square-52"></div><div class="highlight square-54"></div>' +
+                  '<div class="piece wp square-54" data-sfct="piece"></div>';
+    document.body.appendChild(b);
+    expect(d.readSideToMove()).toBeNull();
+  });
+});
+
+// ── enPassantTarget ──────────────────────────────────────────────────────────
+// The only legal move a scraped position can lose. Castling can only ever be
+// over-granted by the home-square heuristic, promotion does not depend on the
+// start FEN at all, and the two counters cannot make anything illegal — but a
+// capture en passant is simply absent from the engine's move list when the FEN
+// says "-", and the refusal reads as a bug.
+describe('enPassantTarget', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  const withHighlights = (...squares) => {
+    const b = document.createElement('wc-chess-board');
+    b.innerHTML = squares.map(s => `<div class="highlight square-${s}"></div>`).join('');
+    document.body.appendChild(b);
+    return b;
+  };
+
+  it('d7-d5 leaves d6 capturable', () => {
+    withHighlights('47', '45');
+    expect(d.enPassantTarget('8/8/8/3p4/8/8/8/8')).toBe('d6');
+  });
+  it('e2-e4 leaves e3 capturable', () => {
+    withHighlights('52', '54');
+    expect(d.enPassantTarget('8/8/8/8/4P3/8/8/8')).toBe('e3');
+  });
+  it('a single push is not a double push', () => {
+    withHighlights('46', '45');
+    expect(d.enPassantTarget('8/8/8/3p4/8/8/8/8')).toBe('-');
+  });
+  it('a knight hop is not a double push', () => {
+    withHighlights('71', '63');
+    expect(d.enPassantTarget('8/8/8/8/8/5N2/8/8')).toBe('-');
+  });
+  it('two squares apart but no pawn landed there', () => {
+    withHighlights('41', '43');
+    expect(d.enPassantTarget('8/8/8/8/8/3R4/8/8')).toBe('-');
+  });
+  it('a pawn on the wrong rank is not a double push', () => {
+    withHighlights('44', '46');
+    expect(d.enPassantTarget('8/8/3p4/8/8/8/8/8')).toBe('-');
+  });
+  it('dash when the board is not highlighting at all', () => {
+    withHighlights();
+    expect(d.enPassantTarget('8/8/8/3p4/8/8/8/8')).toBe('-');
+  });
+  it('dash when there is no board', () => {
+    expect(d.enPassantTarget('8/8/8/3p4/8/8/8/8')).toBe('-');
+  });
+  it('getFEN puts the target in the fourth field', () => {
+    const b = document.createElement('wc-chess-board');
+    b.innerHTML = '<div class="highlight square-47"></div><div class="highlight square-45"></div>' +
+                  '<div class="piece bp square-45"></div><div class="piece wp square-54"></div>' +
+                  '<div class="piece wk square-51"></div><div class="piece bk square-58"></div>';
+    document.body.appendChild(b);
+    expect(d.getFEN().split(' ')[3]).toBe('d6');
+  });
+});
+
+// ── isGameOver: only a VISIBLE game-over surface counts ──────────────────────
+// Fair play depends entirely on this one predicate: it is what keeps the
+// trigger off a live board. A game-over node left mounted but hidden - after a
+// rematch, or rendered ahead of time - must not read as a finished game.
+describe('isGameOver visibility', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  const modal = (style) => {
+    const e = document.createElement('div');
+    e.className = 'game-over-modal-content';
+    if (style) e.setAttribute('style', style);
+    document.body.appendChild(e);
+    return e;
+  };
+
+  it('a visible modal still counts', () => { modal(); expect(d.isGameOver()).toBe(true); });
+  it('display:none does not count', () => { modal('display:none'); expect(d.isGameOver()).toBe(false); });
+  it('visibility:hidden does not count', () => { modal('visibility:hidden'); expect(d.isGameOver()).toBe(false); });
+  it('an ancestor-hidden modal does not count', () => {
+    const e = modal();
+    e.checkVisibility = () => false; // what a browser answers inside a hidden parent
+    expect(d.isGameOver()).toBe(false);
+  });
+  it('one hidden and one visible still counts', () => {
+    modal('display:none'); modal();
+    expect(d.isGameOver()).toBe(true);
+  });
+});
+
+// ── Which board gets read ────────────────────────────────────────────────────
+// getFEN() took the FIRST board in the document while the content script played
+// on the LARGEST visible one. On a page carrying more than one they disagree,
+// and navigating the move list is exactly where a second board shows up.
+describe('board selection and our own pieces', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  const boardWith = (...classes) => {
+    const b = document.createElement('wc-chess-board');
+    b.innerHTML = classes.map(c => `<div class="piece ${c}"></div>`).join('');
+    document.body.appendChild(b);
+    return b;
+  };
+
+  it('reads the board it is handed, not the first one on the page', () => {
+    boardWith('wk square-11', 'bk square-18', 'wp square-21');           // decoy
+    const real = boardWith('wk square-51', 'bk square-58', 'wp square-54');
+    expect(d.getFEN(real).split(' ')[0]).toContain('4K3');
+  });
+  it('falls back to the first board when handed nothing', () => {
+    boardWith('wk square-11', 'bk square-18', 'wp square-21');
+    expect(d.getFEN().split(' ')[0]).toContain('KP6');
+  });
+  it('our own overlay pieces are not part of the position', () => {
+    const b = document.createElement('wc-chess-board');
+    b.innerHTML = '<div class="piece wk square-51"></div><div class="piece bk square-58"></div>' +
+                  '<div class="piece wp square-54"></div>' +
+                  '<div class="piece wq square-41" data-sfct="piece"></div>';
+    document.body.appendChild(b);
+    expect(d.buildFENFromPieces(b)).not.toContain('Q');
+  });
+});
+
+// ── sidebarPanel ─────────────────────────────────────────────────────────────
+// With no game-over modal to dock under - a finished game you came back to,
+// which is when you actually sit and walk the move list - the trigger anchors
+// to the column the move list lives in.
+describe('sidebarPanel', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+
+  it('walks out of the move list to the column around it', () => {
+    document.body.innerHTML =
+      '<div class="board-layout-sidebar"><div class="inner">' +
+      '<div class="move-list-wrapper"><div class="node white-move">e4</div></div>' +
+      '</div></div>';
+    expect(d.sidebarPanel()?.className).toBe('board-layout-sidebar');
+  });
+  it('matches a renamed column on the durable side/rail shape', () => {
+    document.body.innerHTML =
+      '<div class="game-sidebar-component"><div class="movelist">x</div></div>';
+    expect(d.sidebarPanel()?.className).toBe('game-sidebar-component');
+  });
+  it('falls back to the move list when no column is recognisable', () => {
+    document.body.innerHTML = '<div class="wrap"><div class="move-list">x</div></div>';
+    expect(d.sidebarPanel()?.className).toBe('move-list');
+  });
+  it('null when the page has no move list at all', () => {
+    document.body.innerHTML = '<div class="board-layout-sidebar"></div>';
+    expect(d.sidebarPanel()).toBeNull();
+  });
+});
+
+// ── isSelectedPly: a marker that is not a marker ─────────────────────────────
+// The dangerous direction is a FALSE positive. Anchoring on the wrong ply makes
+// both list readings agree with each other on that wrong node, so the answer
+// comes back confident instead of falling through to the board.
+describe('isSelectedPly strictness', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  const list = (...classes) => {
+    document.body.innerHTML = '<div class="move-list">' +
+      classes.map((c, i) => `<div class="node ${i % 2 ? 'black' : 'white'}-move main-line-ply ${c}">x</div>`).join('') +
+      '</div>';
+  };
+  const highlight = (from, to, pieceClass) => {
+    const b = document.createElement('wc-chess-board');
+    b.innerHTML = `<div class="highlight square-${from}"></div><div class="highlight square-${to}"></div>` +
+                  `<div class="piece ${pieceClass} square-${to}"></div>`;
+    document.body.appendChild(b);
+  };
+
+  it('“de-selected” is not selected', () => {
+    list('', 'de-selected', '', '');
+    expect(d.plyNodes().some(d.isSelectedPly)).toBe(false);
+  });
+  it('“not-selected” is not selected', () => {
+    list('not-selected', '', '', '');
+    expect(d.plyNodes().some(d.isSelectedPly)).toBe(false);
+  });
+  it('a negated marker does not anchor the answer on the wrong ply', () => {
+    list('', 'de-selected', '', ''); // 4 plies, last is Black's, so White is up
+    expect(d.readSideToMove()).toBe('w');
+  });
+  it('“selected” as a whole token still counts', () => {
+    list('', 'selected', '', '');
+    expect(d.readSideToMove()).toBe('w'); // ply 2 was Black's
+  });
+  it('two plies claiming the selection defer to the board', () => {
+    list('selected', '', 'selected', '');
+    highlight('52', '54', 'wp'); // a white pawn just landed: Black is up
+    expect(d.readSideToMove()).toBe('b');
+  });
+});
+
+// ── plyFromUrl ───────────────────────────────────────────────────────────────
+// Chess.com writes the ply you are looking at into the query string as you walk
+// the move list. Taken from a live page: a finished game at
+// /game/live/184155665976?username=…&move=20, where move 20 is Black's 10th and
+// no ply node carried a "selected" class at all.
+describe('plyFromUrl', () => {
+  const at = (search) => { history.replaceState({}, '', '/game/live/1' + search); };
+  afterEach(() => { history.replaceState({}, '', '/'); document.body.innerHTML = ''; });
+
+  it('reads the ply out of ?move=', () => { at('?move=20'); expect(d.plyFromUrl()).toBe(20); });
+  it('survives other parameters around it', () => {
+    at('?username=eugzampon&move=7'); expect(d.plyFromUrl()).toBe(7);
+  });
+  it('null with no parameter - you are at the end of the game', () => {
+    at(''); expect(d.plyFromUrl()).toBeNull();
+  });
+  it('null for nonsense', () => { at('?move=abc'); expect(d.plyFromUrl()).toBeNull(); });
+  it('null for move=0, which is not a ply', () => { at('?move=0'); expect(d.plyFromUrl()).toBeNull(); });
+
+  it('an even ply was Black’s, so White is up', () => {
+    at('?move=20');
+    expect(d.readSideToMove()).toBe('w');
+  });
+  it('an odd ply was White’s, so Black is up', () => {
+    at('?move=19');
+    expect(d.readSideToMove()).toBe('b');
+  });
+  it('the URL beats the end of the move list', () => {
+    document.body.innerHTML = '<div class="move-list">' +
+      Array.from({ length: 6 }, (_, i) =>
+        `<div class="node ${i % 2 ? 'black' : 'white'}-move main-line-ply">x</div>`).join('') +
+      '</div>';
+    at('?move=1'); // scrubbed right back to White's first move
+    expect(d.readSideToMove()).toBe('b');
+  });
+  it('a colour tag that contradicts the URL sends it to the board', () => {
+    document.body.innerHTML = '<div class="move-list">' +
+      '<div class="node black-move main-line-ply">x</div></div>'; // ply 1 tagged Black
+    at('?move=1');
+    expect(d.readSideToMove()).toBeNull(); // no board to ask, so: ask the player
+  });
+});
+
+// ── isGameOver against the real Chess.com surfaces ───────────────────────────
+// Both vocabularies captured from live pages on 2026-09-22 by dumping every
+// class matching /game|result|review|over|analys|clock|tab|sidebar/. This is the
+// fair-play guarantee written down as a test: the trigger has to be possible on
+// the first and impossible on the second, from real data rather than from
+// confidence about what Chess.com renders.
+describe('isGameOver on the real surfaces', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  const render = (classes) => {
+    document.body.innerHTML = classes.map(c => `<div class="${c}"></div>`).join('');
+  };
+
+  // /game/live/<id>?…&move=20 — finished, result modal already dismissed.
+  const FINISHED = [
+    'board-layout-sidebar', 'clock-black', 'clock-component', 'clock-player-turn',
+    'game-buttons-container-component', 'game-icons-container-component', 'game-result',
+    'game-review-buttons-component', 'game-review-emphasis-component', 'game-tab-scrollable',
+    'new-game-buttons-buttons', 'new-game-buttons-component', 'quick-analysis-component',
+    'quick-analysis-tally', 'result-row', 'sidebar-component', 'sidebar-container',
+    'tabs-active', 'tabs-component', 'underlined-tabs-component',
+  ];
+  // /play/computer/Cliff-BOT — a game actually being played.
+  const IN_PROGRESS = [
+    'board-layout-sidebar', 'cc-popover', 'cc-sidebar-header-component',
+    'game-controls-controller-component', 'hover-square',
+    'play-controller-quick-analysis-animation', 'play-controller-quick-analysis-overflow',
+    'sidebar-accordion', 'sidebar-container', 'sidebar-controller-component',
+    'sidebar-controller-container', 'sidebar-link', 'sidebar-logo-image',
+  ];
+
+  it('a finished game counts, even with its modal dismissed', () => {
+    render(FINISHED);
+    expect(d.isGameOver()).toBe(true);
+  });
+  it('a game being played does NOT count', () => {
+    render(IN_PROGRESS);
+    expect(d.isGameOver()).toBe(false);
+  });
+  it('the left navigation alone is not a finished game', () => {
+    render(IN_PROGRESS.filter(c => c.startsWith('sidebar-')));
+    expect(d.isGameOver()).toBe(false);
+  });
+  it('a hidden result still does not count', () => {
+    document.body.innerHTML = '<div class="game-result" style="display:none"></div>';
+    expect(d.isGameOver()).toBe(false);
+  });
+});
+
+// ── reserveColumnFoot ────────────────────────────────────────────────────────
+// The bar cannot be inserted into Chess.com's column (Vue throws on an
+// unexpected child), so the column is asked to be shorter instead and the bar
+// lands in the free space. That only works on a border-box element, so the
+// result is measured rather than assumed.
+describe('reserveColumnFoot', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  const panel = (heightAfterPadding) => {
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    // jsdom has no layout: stand in for it, keyed on whether padding was applied.
+    el.getBoundingClientRect = () => ({
+      height: el.style.paddingBottom ? heightAfterPadding : 520,
+      width: 300, left: 0, top: 0, right: 300, bottom: 520,
+    });
+    return el;
+  };
+
+  it('border-box: the column absorbs the padding, so it is kept', () => {
+    const el = panel(520); // unchanged height
+    expect(d.reserveColumnFoot(el, 56)).toBe(true);
+    expect(el.style.paddingBottom).toBe('56px');
+  });
+  it('content-box: the column grew instead, so the padding is dropped', () => {
+    const el = panel(576); // 520 + 56
+    expect(d.reserveColumnFoot(el, 56)).toBe(false);
+    expect(el.style.paddingBottom).toBe('');
+  });
+  it('does not reserve twice', () => {
+    const el = panel(520);
+    d.reserveColumnFoot(el, 56);
+    expect(d.reserveColumnFoot(el, 90)).toBe(false);
+    expect(el.style.paddingBottom).toBe('56px');
+  });
+  it('releasing hands back a padding the column already had', () => {
+    const el = panel(520);
+    el.style.paddingBottom = '8px';
+    d.reserveColumnFoot(el, 56);
+    expect(el.style.paddingBottom).toBe('56px');
+    d.releaseColumnFoot();
+    expect(el.style.paddingBottom).toBe('8px');
+    expect(el.hasAttribute('data-sfctcolumn')).toBe(false);
+  });
+  it('releasing is safe when nothing was reserved', () => {
+    expect(() => d.releaseColumnFoot()).not.toThrow();
+  });
+});
+
+// ── getOpponentElo: theirs, never yours ──────────────────────────────────────
+// The engine's strength is calibrated on this number, so reading the wrong row
+// means playing against a Stockfish tuned to your OWN rating. Class names taken
+// from a live page on 2026-09-22: board-layout-player board-layout-top and
+// board-layout-player board-layout-bottom.
+describe('getOpponentElo picks the opponent, not the bigger number', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  const rows = (topRating, bottomRating, youOnTop) => {
+    document.body.innerHTML =
+      `<div class="board-layout-player board-layout-top"><div class="player-row-component player-row-top">` +
+      `${youOnTop ? '<span class="user-tagline-you">You</span>' : ''}` +
+      `<span class="cc-user-rating-white">(${topRating})</span></div></div>` +
+      `<div class="board-layout-player board-layout-bottom"><div class="player-row-component">` +
+      `${youOnTop ? '' : '<span class="user-tagline-you">You</span>'}` +
+      `<span class="cc-user-rating-white">(${bottomRating})</span></div></div>`;
+  };
+
+  it('reads the top row when you are at the bottom', () => {
+    rows(463, 433, false);
+    expect(d.getOpponentElo()).toBe(463);
+  });
+  it('still reads the top row when the opponent is WEAKER than you', () => {
+    // The old code took the largest rating on the page, so this returned 2100 -
+    // your own - and the engine came out far stronger than the game deserved.
+    rows(900, 2100, false);
+    expect(d.getOpponentElo()).toBe(900);
+  });
+  it('reads the bottom row when the "You" tag is on top', () => {
+    // Game review can reset the orientation and put you at the top.
+    rows(2100, 900, true);
+    expect(d.getOpponentElo()).toBe(900);
+    expect(d.getPlayerColor()).toBe('black');
+  });
+  it('1500 rather than the biggest number on the page', () => {
+    // No player row at all - a renamed layout. Guessing from loose rating nodes
+    // is how your own rating got picked up.
+    document.body.innerHTML = '<span class="rating">2400</span><span class="rating">800</span>';
+    expect(d.getOpponentElo()).toBe(1500);
+  });
+  it('an explicit data-opponent-rating is trusted wherever it sits', () => {
+    document.body.innerHTML = '<div data-opponent-rating="1740"></div>';
+    expect(d.getOpponentElo()).toBe(1740);
+  });
+});
+
+// ── getPlayerColor: you keep your own pieces ─────────────────────────────────
+// Getting this wrong hands you your opponent's pieces and gives Stockfish
+// yours. It regressed once by widening the row search to every [class*="player"]
+// and keeping the OUTERMOST match: a wrapper around both rows then stood in for
+// the top row, and it contains your own "You" tag, so every board read "black".
+describe('getPlayerColor is not fooled by a wrapper', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  const wrapped = () => {
+    document.body.innerHTML =
+      '<div class="players-wrapper board-layout-players">' +
+      '<div class="board-layout-player board-layout-top"><div class="player-row-component player-row-top">' +
+      '<span class="cc-user-rating-white">(463)</span></div></div>' +
+      '<div class="board-layout-player board-layout-bottom"><div class="player-row-component">' +
+      '<span class="user-tagline-you">You</span><span class="cc-user-rating-white">(433)</span></div></div>' +
+      '</div>';
+  };
+
+  it('you are White when the "You" tag is at the bottom', () => {
+    wrapped();
+    expect(d.getPlayerColor()).toBe('white');
+  });
+  it('and the opponent is still read from the top row', () => {
+    wrapped();
+    expect(d.getOpponentElo()).toBe(463);
+  });
+  it('the row lookup returns a row, never the wrapper around both', () => {
+    wrapped();
+    const { top, bottom } = d.playerRows();
+    // Innermost by design, so the class is player-row-top rather than the
+    // board-layout-top around it - what matters is that neither is the
+    // wrapper, which would contain the other row.
+    expect(top.className).toMatch(/top/);
+    expect(bottom.contains(top)).toBe(false);
+    expect(top.contains(bottom)).toBe(false);
+    expect(top.textContent).toContain('463');
+    expect(bottom.textContent).toContain('433');
+  });
+  it('a flipped board still means you are Black', () => {
+    wrapped();
+    const b = document.createElement('wc-chess-board');
+    b.setAttribute('flipped', '');
+    document.body.appendChild(b);
+    expect(d.getPlayerColor()).toBe('black');
+  });
 });

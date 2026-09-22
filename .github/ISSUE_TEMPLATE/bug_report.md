@@ -24,4 +24,4 @@ assignees: ''
 **Info extra**
 - Chess.com board flipped? Sì/No
 - Partita finita per: abbandono / timeout / matto
-- Si vede il bottone "Continue vs Computer"? Sì/No
+- Si vede il bottone "Keep Playing"? Sì/No

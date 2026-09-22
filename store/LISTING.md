@@ -17,7 +17,7 @@ Assets in this folder:
 | `screenshots/5-strength-and-on-off.png` | screenshot 5 | no |
 | `promo-tile-440x280.png` | CWS "small promo tile" | expected |
 | `store-icon-128.png` | CWS store icon | **yes** |
-| `icon-source-534.png` | master artwork, not uploaded | - |
+| `icon-source.png` | master artwork (1181x1181), not uploaded | - |
 
 All screenshots are 1280x800 PNG, which is one of the two sizes Chrome accepts (the other is
 640x400). There is no 1400x560 marquee tile here: it is only used for the homepage
@@ -54,7 +54,7 @@ before you flagged. Maybe you want to see whether that endgame was actually hold
 Chess.com will offer you a rematch or a review, but it will not let you simply keep playing
 the position you were just in.
 
-This extension adds one button to the game-over dialog: "Continue vs Computer". Press it and
+This extension adds one button to the game-over dialog: "Keep Playing". Press it and
 the same board keeps going, against Stockfish, from the exact final position. No redirect, no
 new tab, no re-entering the position by hand.
 
@@ -113,7 +113,7 @@ Keep them as plain text with bare URLs: the description field does not render Ma
 
 ```
 When a game on Chess.com finishes, this extension adds one button to the game-over dialog:
-"Continue vs Computer". Pressing it lets you keep playing the final position against a
+"Keep Playing". Pressing it lets you keep playing the final position against a
 Stockfish chess engine that runs entirely inside your browser, on the same board you were
 already playing on. That is the extension's only function.
 ```
@@ -179,7 +179,7 @@ the question before it is asked.
 ## Firefox / AMO: what differs
 
 - Upload the **firefox** zip, not the chrome one. `npm run package` builds both;
-  the Firefox one has `manifest-firefox.json` renamed to `manifest.json` inside it.
+  the Firefox one carries the manifest `scripts/firefox-manifest.py` derives.
 - AMO requires a **source-code submission** because the vendored engine loader is minified.
   The build instructions are in [`../docs/AMO-SOURCE-SUBMISSION.md`](../docs/AMO-SOURCE-SUBMISSION.md);
   paste that file's "Notes for the reviewer" section into the source-upload form.

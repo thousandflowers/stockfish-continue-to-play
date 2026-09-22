@@ -17,6 +17,7 @@ bash scripts/download-stockfish.sh >/dev/null   # re-verifies the pinned checksu
 PAYLOAD=(
   service-worker.js
   content_chesscom.js
+  page-bridge.js
   popup.html
   popup.js
   lib
@@ -28,16 +29,20 @@ PAYLOAD=(
   LICENSE.MIT
 )
 
-build() {  # build <target> <source manifest>
-  local target="$1" src="$2" out="stockfish-continue-to-play-${1}-${VERSION}.zip"
+build() {  # build <target>
+  local target="$1" out="stockfish-continue-to-play-${1}-${VERSION}.zip"
   local stage; stage="$(mktemp -d)"
   trap 'rm -rf "$stage"' RETURN
   cp -R "${PAYLOAD[@]}" "$stage/"
-  cp "$src" "$stage/manifest.json"     # Firefox manifest is renamed, never shipped as-is
+  if [ "$target" = firefox ]; then
+    python3 scripts/firefox-manifest.py > "$stage/manifest.json"
+  else
+    cp manifest.json "$stage/manifest.json"
+  fi
   rm -f "$out"
   (cd "$stage" && zip -qr - .) > "$out"
   echo "✓ $out  ($(du -h "$out" | cut -f1), $(unzip -l "$out" | tail -1 | awk '{print $2}') entries)"
 }
 
-build chrome  manifest.json
-build firefox manifest-firefox.json
+build chrome
+build firefox
