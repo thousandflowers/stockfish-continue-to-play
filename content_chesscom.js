@@ -271,7 +271,11 @@ function finishMateProbe() {
     return;
   }
   const youLost = side === st.playerSide;
-  if (score === 'mate') { endGame(youLost ? 'Stockfish won' : 'You won!', 'by checkmate'); return; }
+  if (score === 'mate') {
+    endGame(youLost ? 'Stockfish won' : 'You won!', 'by checkmate',
+      { winner: side === 'w' ? 'b' : 'w' });
+    return;
+  }
   if (score === 'draw') { endGame('Draw', 'by stalemate'); return; }
   endGame('Game over', 'no legal moves left');
 }
@@ -296,11 +300,14 @@ function removeGameOverModal() {
   if (document.getElementById('sfct-modal-blocker')) return;
   const s = document.createElement('style');
   s.id = 'sfct-modal-blocker';
+  // :not([data-sfct]) on every one of them. Our own result card wears Chess.com's
+  // modal classes so it matches their design exactly — without this it would be
+  // hidden by the very rule that hides theirs.
   s.textContent = [
     '.game-over-modal-shell', '.game-over-modal-component', '.game-over-modal-content',
     '.game-over-buttons-component', '.game-over-container', '[data-cy="game-over-dialog"]',
     '.game-result-component', '[class*="game-over-modal"]', '.board-modal-overlay',
-  ].join(',') + '{display:none!important}';
+  ].map(sel => sel + ':not([data-sfct])').join(',') + '{display:none!important}';
   document.head.appendChild(s);
 }
 
@@ -1002,52 +1009,112 @@ function centreOnBoard(el) {
   el.style.transform = 'translate(-50%,-50%)';
 }
 
-// A full-width button in Chess.com's dialog style.
+// Chess.com's own button, not a copy of one. Their classes carry the shape, the
+// colour, the type and the states, and they follow the theme you have chosen.
 function cardButton(text, primary) {
   const b = document.createElement('button');
+  b.setAttribute('data-sfct', 'card');
+  b.className = 'cc-button-component cc-button-xx-large ' +
+    (primary ? 'cc-button-primary cc-bg-primary' : 'cc-button-secondary');
   b.textContent = text;
-  Object.assign(b.style, {
-    width: '100%', minHeight: '44px', border: 'none', borderRadius: '8px',
-    fontSize: '15px', fontWeight: '700', cursor: 'pointer',
-    background: primary ? '#81b64c' : 'rgba(255,255,255,.09)',
-    color: primary ? '#fff' : 'rgba(255,255,255,.85)',
-    boxShadow: primary ? 'inset 0 -3px 0 rgba(0,0,0,.18)' : 'none',
-  });
+  b.style.width = '100%';
+  // cc-button-primary brings its own green gradient. The secondary paints
+  // nothing outside their own containers, so it gets their input surface token
+  // rather than a colour invented here.
+  if (!primary) b.style.backgroundColor = 'var(--color-bg-input, rgba(255,255,255,.09))';
   return b;
 }
 
-// The dark card Chess.com announces things with: heading, subtitle, then a
-// column of buttons. Both the result and the "who is to move?" question are
-// this shape, so it is built once.
-function makeCard(id, title, subtitle) {
+// Their close button. The glyph class is build-hashed (cc-icon-glyph_57606db),
+// so it is read off one already on the page rather than written down here, where
+// it would be wrong by the next deploy.
+function closeButton() {
+  const b = document.createElement('button');
+  b.setAttribute('data-sfct', 'card');
+  b.className = 'cc-close-button-component cc-close-button-medium cc-close-button-subtle';
+  b.setAttribute('aria-label', 'Close');
+  const bg = document.createElement('div');
+  bg.setAttribute('data-sfct', 'card');
+  bg.className = 'cc-close-button-bg';
+  const icon = document.createElement('span');
+  icon.setAttribute('data-sfct', 'card');
+  const theirs = document.querySelector('[class*="cc-close-button-icon"]');
+  icon.className = theirs ? String(theirs.className) : 'cc-close-button-icon';
+  b.append(bg, icon);
+  Object.assign(b.style, { position: 'absolute', top: '10px', right: '10px', cursor: 'pointer' });
+  return b;
+}
+
+// The card Chess.com announces a result with, assembled from its own parts:
+//
+//   board-modal-component            the panel, its radius and its theme colours
+//     game-over-modal-shell-container
+//       game-over-modal-shell-content
+//         game-over-modal-header-component [ -whiteWon | -blackWon ]
+//           game-over-modal-header-inner > -header
+//         game-over-modal-shell-buttons
+//
+// Every node is tagged data-sfct: it keeps our card out of the rule that hides
+// theirs, and it lets teardown collect the whole thing in one sweep.
+function makeCard(id, title, subtitle, opts) {
   const old = document.getElementById(id);
-  if (old) { old._sfctCleanup?.(); old.remove(); } // never orphan its listeners
+  if (old) { old._sfctCleanup?.(); old.remove(); }
   ensureAnimStyle();
-  const card = document.createElement('div');
+  const el = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    n.setAttribute('data-sfct', 'card');
+    if (cls) n.className = cls;
+    if (text) n.textContent = text;
+    return n;
+  };
+
+  const card = el('div', 'board-modal-component');
   card.id = id;
-  card.setAttribute('data-sfct', 'card');
+  // Painted from Chess.com's own theme variables, not from colours written
+  // down here. --color-bg-gradient-modal IS their modal surface, so this card
+  // follows whatever theme you are on — the hardcoded #262421 it used before is
+  // literally their --color-bg-opaque, which was right in dark mode by accident
+  // and wrong in light mode. The old values stay as fallbacks for a page that
+  // defines neither.
   Object.assign(card.style, {
-    position: 'fixed', zIndex: '999998', width: 'min(330px,80vw)',
-    background: '#262421', borderRadius: '12px', overflow: 'hidden',
-    boxShadow: '0 12px 40px rgba(0,0,0,.6)', color: '#fff',
-    fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
-    animation: '_sfctpop .18s ease-out',
+    position: 'fixed', zIndex: '999998', width: 'min(340px,86vw)',
+    overflow: 'hidden', animation: '_sfctpop .18s ease-out',
+    // BOTH: their modal gradient runs from #312E2B to almost transparent,
+    // because it is meant to sit ON a solid surface rather than be one. Set
+    // as `background` alone it made the card see-through.
+    backgroundColor: 'var(--color-bg-opaque, #262421)',
+    backgroundImage: 'var(--color-bg-gradient-modal, none)',
+    color: 'var(--color-text-default, #fff)',
+    borderRadius: 'var(--radius-4, 10px)',
+    boxShadow: '0 12px 40px var(--color-bg-overlay-subtle, rgba(0,0,0,.5))',
+    fontFamily: 'inherit',
   });
 
-  const head = document.createElement('div');
-  Object.assign(head.style, { background: '#302e2c', padding: '18px 20px', textAlign: 'center' });
-  const h = document.createElement('div');
-  h.textContent = title;
-  Object.assign(h.style, { fontSize: '22px', fontWeight: '700', lineHeight: '1.2' });
-  const sub = document.createElement('div');
-  sub.textContent = subtitle;
-  Object.assign(sub.style, { fontSize: '13px', opacity: '.6', marginTop: '4px' });
-  head.append(h, sub);
+  const header = el('div', 'game-over-modal-header-component' +
+    (opts?.winner ? ` game-over-modal-header-${opts.winner === 'w' ? 'white' : 'black'}Won` : ''));
+  header.style.position = 'relative';
+  const inner = el('div', 'game-over-modal-header-inner');
+  Object.assign(inner.style, { padding: '22px 20px 14px', textAlign: 'center' });
+  const h = el('div', 'game-over-modal-header-header', title);
+  Object.assign(h.style, { fontSize: '26px', fontWeight: '800', lineHeight: '1.15' });
+  inner.appendChild(h);
+  if (subtitle) {
+    const sub = el('div', null, subtitle);
+    Object.assign(sub.style, { opacity: '.62', fontSize: '14px', marginTop: '2px' });
+    inner.appendChild(sub);
+  }
+  header.append(inner);
 
-  const body = document.createElement('div');
-  Object.assign(body.style, { padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: '8px' });
-  card.append(head, body);
-  return { card, body };
+  const body = el('div', 'game-over-modal-shell-buttons');
+  Object.assign(body.style, { display: 'flex', flexDirection: 'column', gap: '8px',
+    padding: '0 20px 20px' });
+
+  const content = el('div', 'game-over-modal-shell-content');
+  content.append(header, body);
+  const shell = el('div', 'game-over-modal-shell-container');
+  shell.appendChild(content);
+  card.appendChild(shell);
+  return { card, body, header };
 }
 
 // Put a card on screen, centred on the board and staying there.
@@ -1094,8 +1161,10 @@ function askSideToMove(onPick) {
 // `opts.rematch === false` drops the "play again" button: a position that was
 // already over when you picked it would lead straight back to this card.
 function showResultModal(title, subtitle, opts) {
-  const { card, body } = makeCard('sfct-result', title, subtitle || '');
-  card.setAttribute('data-sfct', 'result');
+  const { card, body, header } = makeCard('sfct-result', title, subtitle || '', opts);
+  const close = closeButton();
+  close.onclick = dismissResult;
+  header.appendChild(close);
   const replayable = opts?.rematch !== false;
   if (replayable) {
     const again = cardButton('Play again vs Stockfish', true);
@@ -1105,10 +1174,12 @@ function showResultModal(title, subtitle, opts) {
   const back = cardButton('Back to Chess.com', false);
   back.onclick = dismissResult;
   const note = document.createElement('div');
+  note.setAttribute('data-sfct', 'card');
   note.textContent = replayable
     ? 'The final position stays on the board until you leave.'
     : 'Go back, pick an earlier move, then Continue again.';
-  Object.assign(note.style, { fontSize: '11px', opacity: '.45', textAlign: 'center', marginTop: '2px' });
+  Object.assign(note.style, { fontSize: '12px', opacity: '.5', textAlign: 'center', marginTop: '2px',
+    color: 'var(--color-text-subtle, inherit)' });
   body.append(back, note);
   showCard(card);
 }

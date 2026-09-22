@@ -225,7 +225,15 @@ await page.goto('https://www.chess.com/game/live/mate', { waitUntil: 'domcontent
 await page.locator('#sfctplay-btn').waitFor({ timeout: 10000 }).catch(() => fail('no button on the mate page'));
 await page.locator('#sfctplay-btn').click();
 await page.locator('#sfct-result').waitFor({ timeout: 90000 }).catch(async () => fail(
-  'no result modal; badge=' + (await page.locator('#sfct-badge').textContent().catch(() => '(none)'))));
+  'no result modal; ' + JSON.stringify(await page.evaluate(() => {
+    const c = document.getElementById('sfct-result');
+    const r = c && c.getBoundingClientRect();
+    return { badge: document.getElementById('sfct-badge')?.textContent,
+      exists: !!c, box: r && { w: Math.round(r.width), h: Math.round(r.height) },
+      display: c && getComputedStyle(c).display, vis: c && getComputedStyle(c).visibility,
+      op: c && getComputedStyle(c).opacity, cls: c && c.className,
+      html: c && c.outerHTML.slice(0, 200) };
+  }))));
 const verdict = (await page.locator('#sfct-result').textContent()).trim();
 if (!/Stockfish won/.test(verdict) || !/by checkmate/.test(verdict)) fail('wrong verdict: ' + verdict);
 console.log('PASS 11: loss announced in a modal —', verdict.slice(0, 34));
