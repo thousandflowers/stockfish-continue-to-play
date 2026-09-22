@@ -25,6 +25,24 @@ const PACE_MAX_MS = 1600;   // past this a reply stops feeling like thinking and
 const PACE_OF_GAME = 0.7;   // a continuation runs brisker than the game it came from
 const PACE_DEFAULT_MS = 650;
 const PACE_SAMPLES = 3; // how many of your own recent moves the pace follows
+
+// Let Chess.com's own board render the continuation, by playing our moves on it
+// through the bridge. OFF.
+//
+// The bridge READS beautifully: getFEN gives the displayed position with real
+// castling rights, a real en-passant square and the right side to move, and
+// getResult says outright whether a game has finished. All of that is kept.
+//
+// Driving their board is the part that does not hold up. On a review page
+// game.move() behaves in ways this extension cannot predict — the view does not
+// follow the move, moves land in variations, the animation jumps — and each fix
+// for one of those uncovered the next. A continuation where the pieces do not
+// visibly move is worse than one drawn in our own overlay, which has worked
+// since 3.3.0.
+//
+// One line to turn it back on, once that behaviour is understood well enough to
+// be tested rather than discovered.
+const NATIVE_RENDERING = false;
 const ENGINE_INIT_TIMEOUT_MS = 15000;
 const REFRESH_INTERVAL_MS = 1000;
 const POLL_INTERVAL_MS = 200;
@@ -407,7 +425,7 @@ function showChesscomBoard(fen, color, strengthSetting) {
       selectedSq: null, playerSide, engineSide, sideToMove, board,
       strengthSetting, finished: false,
       // Chess.com draws the game when we can reach their board.
-      native: !!pageState,
+      native: NATIVE_RENDERING && !!pageState,
       // How far back through the move list this position sits. A rematch has to
       // come back here: resetToMainLine() lands at the END of the game, so
       // branching straight after it restarts from the finish — which is over
