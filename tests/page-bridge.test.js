@@ -39,6 +39,7 @@ const mountBoard = (result) => {
     resetToMainLine: () => { called.push('reset'); return {}; },
     getLegalMoves: () => { called.push('legal'); return ['e2e4', 'd2d4']; },
     moveBackward: () => { called.push('back'); },
+    selectLineEnd: () => { called.push('showEnd'); },
     getLegalMovesForSquare: () => { called.push('legalSquare'); return ['e2e4']; },
   };
   const el = document.createElement('wc-chess-board');
@@ -86,7 +87,8 @@ describe('page-bridge fair-play gate', () => {
     mountBoard('0-1');
     const r = await send('move', { from: 'e2', to: 'e4' });
     expect(r.ok).toBe(true);
-    expect(called).toEqual(['move:{"from":"e2","to":"e4"}']);
+    // …and the view is brought to the move, or it lands where nobody is looking.
+    expect(called).toEqual(['move:{"from":"e2","to":"e4"}', 'showEnd']);
   });
   it('carries the promotion piece through', async () => {
     mountBoard('1-0');
@@ -97,7 +99,7 @@ describe('page-bridge fair-play gate', () => {
     mountBoard('1-0');
     expect((await send('continuation')).ok).toBe(true);
     expect((await send('reset')).ok).toBe(true);
-    expect(called).toEqual(['continuation', 'reset']);
+    expect(called).toEqual(['continuation', 'showEnd', 'reset']);
   });
 
   it('refuses to walk the move list back while a game is being played', async () => {

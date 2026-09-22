@@ -97,8 +97,13 @@
   const OPS = {
     // Branch off the position being shown. Our moves then land in a variation
     // beside the real game, which resetToMainLine() discards untouched.
-    continuation: (g) => g.createContinuation(),
-    move: (g, a) => g.move(a),
+    continuation: (g) => { const r = g.createContinuation(); try { g.selectLineEnd(); } catch (_) {} return r; },
+    // move() adds the move to the line. It does NOT promise the board is
+    // SHOWING the end of that line — and when the view is parked on an earlier
+    // ply, which is exactly where a continuation starts from, the move lands
+    // somewhere you are not looking. The pieces move and you never see them.
+    // selectLineEnd() brings the view to the move just played.
+    move: (g, a) => { const r = g.move(a); try { g.selectLineEnd(); } catch (_) {} return r; },
     reset: (g) => g.resetToMainLine(),
     // Walk the move list back, so a rematch can return to the position the
     // continuation began from instead of branching at the end of the game.
