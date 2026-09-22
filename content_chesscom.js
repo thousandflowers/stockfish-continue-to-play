@@ -304,7 +304,7 @@ function injectBoardStyle() {
     // the transition that makes a played move slide is exactly what makes a
     // dragged piece lag behind the cursor. It is also the only moment the hand
     // should close.
-    '[data-sfct="piece"][data-sfct-drag]{transition:none;cursor:grabbing;z-index:9}',
+    '[data-sfct="piece"][data-sfct-drag]{transition:none;cursor:grabbing}',
     // Their end-of-game artwork sits on the board as its own children, not as
     // pieces, so hiding their pieces left it painted over OUR game for the whole
     // of it - the halves on both kings after a draw being the one you cannot
@@ -769,7 +769,17 @@ function attachPointerHandlers() {
     if (!dragStart || !dragEl) return;
     const dx = e.clientX - dragFrom.x, dy = e.clientY - dragFrom.y;
     if (!dragMoved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
-    if (!dragMoved) { dragMoved = true; dragEl.dataset.sfctDrag = '1'; }
+    if (!dragMoved) {
+      dragMoved = true;
+      dragEl.dataset.sfctDrag = '1';
+      // Above every other piece, and it has to be said this loudly. Our pieces
+      // wear Chess.com's own `piece` class to borrow its sprite, and their rule
+      // for it computes z-index 5 - measured on a live board, on the carried
+      // piece itself, while a stylesheet rule of ours said 9 and lost. With the
+      // z-index equal, DOM order decides, and the piece being carried was the
+      // 50th of 64: the fourteen after it painted straight over it.
+      dragEl.style.setProperty('z-index', '20', 'important');
+    }
     dragEl.style.transform = `${dragEl.dataset.sfctBase} translate(${dx}px,${dy}px)`;
     // No destination square is painted here on purpose. Chess.com's board does
     // carry a `div.hover-square` of its own, and reusing it was the plan - but
@@ -786,6 +796,7 @@ function attachPointerHandlers() {
   const dropPiece = () => {
     if (dragEl) {
       dragEl.style.transform = dragEl.dataset.sfctBase || dragEl.style.transform;
+      dragEl.style.removeProperty('z-index');
       delete dragEl.dataset.sfctBase;
       delete dragEl.dataset.sfctDrag;
     }
@@ -1199,6 +1210,9 @@ const CARD_FALLBACK_BG = '#262421';
 const CARD_FALLBACK_HEAD_BG = '#302e2c';
 
 function dressCardIfUnstyled(card) {
+  // A cloned card of theirs is already dressed, and has none of the markers this
+  // works by. Painting it would be repainting Chess.com.
+  if (!card.querySelector('[data-sfct="card-body"]')) return false;
   const content = card.firstElementChild;
   const bg = content && getComputedStyle(content).backgroundColor;
   if (bg && !/rgba\(0, 0, 0, 0\)|transparent/.test(bg)) return false;
@@ -1249,7 +1263,110 @@ function showCard(card) {
 
 function closeCard(card) { card._sfctCleanup?.(); card.remove(); }
 
+// ── Their result card, borrowed ──────────────────────────────────────────────
+// Dressing our own box in their class names got close and stayed wrong, because
+// the structure was still ours. So the card IS theirs: taken off the page with
+// cloneNode while their modal is still mounted, then retexted and rewired.
+//
+// Capture has to happen BEFORE the continuation starts. showChesscomBoard() hides
+// their modal with a stylesheet and their own code unmounts it shortly after, so
+// by the time a result is needed there is nothing left to copy.
+let _modalTemplate = null;
+
+function captureModalTemplate() {
+  const modal = findGameOverModal();
+  if (modal) _modalTemplate = modal.cloneNode(true);
+}
+
+// The deepest element that carries text, so a wrapper is never overwritten - the
+// same leaf rule the opponent row is written by, for the same reason.
+function setDeepText(el, text) {
+  if (!el) return false;
+  const leaf = el.children.length
+    ? [...el.querySelectorAll('*')].find(n => n.children.length === 0)
+    : el;
+  (leaf || el).textContent = text;
+  return true;
+}
+
+function cloneResultCard(title, subtitle, opts) {
+  if (!_modalTemplate) return null;
+  const card = _modalTemplate.cloneNode(true); // cloned again: a rematch shows it twice
+
+  // A cloned CUSTOM ELEMENT is upgraded the moment it re-enters the document, and
+  // its constructor then runs against Chess.com's own state. Anything with a dash
+  // in its tag goes, and so does anything that could execute or load.
+  for (const el of [...card.querySelectorAll('*')]) {
+    if (el.tagName.includes('-') || el.tagName === 'SCRIPT' || el.tagName === 'IFRAME') el.remove();
+  }
+  // Their ids would now exist twice on the page, and both sides would be confused
+  // about which is which.
+  for (const el of [...card.querySelectorAll('[id]')]) el.removeAttribute('id');
+  card.removeAttribute('id');
+
+  // Every node marked as ours, not just the root: the rule that hides their modal
+  // while we play keys off this attribute, and marking only the root once left a
+  // card of full width and no height at all.
+  card.setAttribute('data-sfct', 'result');
+  for (const el of card.querySelectorAll('*')) el.setAttribute('data-sfct', 'card-part');
+  card.id = 'sfct-result';
+
+  // A card that cannot say WHY the game ended is worse than one of ours that can.
+  // Not every surface matching their modal selectors carries a title - a finished
+  // game reopened later matches a container that has none - so this is where the
+  // borrowing gives up and the hand-built card takes over.
+  if (!setDeepText(card.querySelector('[class*="title"]'), title)) return null;
+  const sub = card.querySelector('[class*="subtitle"]');
+  if (sub) setDeepText(sub, subtitle || '');
+
+  const isClose = (el) => /close/i.test(String(el.className) + ' ' + (el.getAttribute('aria-label') || ''));
+  const all = [...card.querySelectorAll('button, a[role="button"], a')];
+  for (const el of all) el.removeAttribute('href'); // a cloned link would navigate
+  card.querySelectorAll('[class*="close"]').forEach(x => { x.onclick = dismissResult; });
+
+  const actions = all.filter(b => !isClose(b));
+  if (!actions.length) return null; // nothing of theirs to speak with
+  const replayable = opts?.rematch !== false;
+  const wanted = replayable
+    ? [['Play again vs Stockfish', rematch], ['Back to Chess.com', dismissResult]]
+    : [['Back to Chess.com', dismissResult]];
+  // Their card does not always carry as many buttons as we need to offer - a
+  // finished game reopened later shows one where a game just ended shows two. One
+  // of theirs is duplicated rather than a button of ours being invented, so the
+  // second one is their button in every respect but its words.
+  while (actions.length < wanted.length) {
+    const last = actions[actions.length - 1];
+    const copy = last.cloneNode(true);
+    copy.removeAttribute('id');
+    copy.setAttribute('data-sfct', 'card-part');
+    for (const el of copy.querySelectorAll('*')) { el.removeAttribute('id'); el.setAttribute('data-sfct', 'card-part'); }
+    last.parentElement.appendChild(copy);
+    actions.push(copy);
+  }
+  actions.forEach((btn, i) => {
+    const want = wanted[i];
+    // Their extra buttons - New Game, Game Review - would navigate away or lie
+    // about a game Chess.com never played. They go.
+    if (!want) { btn.remove(); return; }
+    setDeepText(btn, want[0]);
+    btn.onclick = want[1];
+    btn.removeAttribute('aria-label');
+  });
+
+  Object.assign(card.style, {
+    position: 'fixed', zIndex: '999998', maxWidth: '92vw',
+    animation: '_sfctpop .18s ease-out',
+  });
+  return card;
+}
+
 function showResultModal(title, subtitle, opts) {
+  document.getElementById('sfct-result')?.remove();
+  const theirs = cloneResultCard(title, subtitle, opts);
+  if (theirs) { showCard(theirs); return; }
+
+  // No modal was on the page to copy - a finished game reopened later, where
+  // theirs was dismissed long ago. The hand-built card stands in.
   const { card, body, content } = makeCard('sfct-result', title, subtitle || '');
   card.setAttribute('data-sfct', 'result');
   const replayable = opts?.rematch !== false;
@@ -1314,6 +1431,7 @@ function onContinueClick(e) {
 function startContinuation(board, side, strength, fenFromPage) {
   const fen = fenFromPage || getFEN(board, side);
   if (!fen) { showNotice('Position not found.'); return; }
+  captureModalTemplate(); // while theirs is still on the page to copy
   removeTrigger(); // the trigger goes away while you play
   showChesscomBoard(fen, bridgePlayerColor() || getPlayerColor(), strength);
 }
@@ -1352,25 +1470,6 @@ function makeNativeButton(template) {
   return btn;
 }
 
-// Last-resort floating button — independent of Chess.com's modal DOM.
-function injectFloatingButton() {
-  if (document.getElementById('sfctplay-btn')) return;
-  const btn = document.createElement('button');
-  btn.id = 'sfctplay-btn';
-  btn.dataset.sfctFloating = '1';
-  btn.textContent = '♟ Continue vs Computer';
-  Object.assign(btn.style, {
-    position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)',
-    zIndex: '999999', background: '#769656', color: '#fff', border: 'none',
-    padding: '12px 22px', borderRadius: '8px', fontSize: '15px', fontWeight: '700',
-    cursor: 'pointer', boxShadow: '0 6px 24px rgba(0,0,0,.5)',
-    fontFamily: '-apple-system,BlinkMacSystemFont,sans-serif',
-  });
-  btn.onclick = onContinueClick;
-  document.body.appendChild(btn);
-  log('button injected (floating fallback)');
-}
-
 // Can this page tell us whose move it is? If not, no trigger is offered: the
 // alternative was a card of ours asking the question, and nothing of ours
 // interrupts the page any more. Computed here, where it runs once per injection,
@@ -1392,7 +1491,13 @@ function injectButtons() {
   // rather than something belonging to the game.
   const modal = findGameOverModal();
   const anchor = modal || sidebarPanel();
-  if (!anchor) { injectFloatingButton(); return; }
+  // Nothing of ours floats over the page any more. With neither their result
+  // card nor their move-list column to belong to, there is nowhere this button
+  // can sit that looks like part of the site - so it is not offered, the same
+  // way it is not offered where the side to move cannot be settled. A green pill
+  // stuck to the bottom of the window is exactly the kind of surface that was
+  // just deleted everywhere else.
+  if (!anchor) return;
 
   // Line the trigger up under the anchor but keep the node in <body>: Chess.com
   // renders both surfaces with Vue, and inserting into them made Vue throw
