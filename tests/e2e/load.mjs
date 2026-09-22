@@ -689,6 +689,38 @@ console.log(`PASS 21: capture ring ${ring.border} on a ${Math.round(rbox.width /
 await stop();
 await page.waitForTimeout(300);
 
+// 22. Their card can be on the page before its button row is. The trigger docks
+// to the card at once, and must still take the shape of their button when the
+// row lands - this is where the "sometimes small" button came from.
+const LATE_ROW = `<!doctype html><html><body style="margin:0">
+<div class="board-player-component"><span class="user-username">opponent</span></div>
+<div class="board-player-component"><span class="user-tagline-you">You</span></div>
+<wc-chess-board id="board" style="position:relative;display:block;width:480px;height:480px;background:#eee">
+${fenToDivs('4k3/8/8/8/8/8/4P3/4K3')}</wc-chess-board>
+<div class="move-list"><div class="node white-move main-line-ply">e3</div>
+<div class="node black-move main-line-ply">Ke8</div></div>
+<div class="game-over-modal-shell-container" style="position:fixed;left:500px;top:40px;width:400px">
+<div class="game-over-modal-shell-content" style="background:rgb(38,36,33);padding-bottom:16px">
+<div class="game-over-modal-header-component">Game Aborted</div></div></div>
+</body></html>`;
+await page.route('https://www.chess.com/game/live/laterow', route =>
+  route.fulfill({ status: 200, contentType: 'text/html', body: LATE_ROW }));
+await page.goto('https://www.chess.com/game/live/laterow', { waitUntil: 'domcontentloaded' });
+await page.locator('#sfctplay-btn').waitFor({ timeout: 10000 }).catch(() => fail('no trigger on the late-row page'));
+await page.evaluate(() => {
+  const row = document.createElement('div');
+  row.className = 'game-over-modal-shell-buttons';
+  row.innerHTML = '<button class="cc-button-component cc-button-primary cc-button-xx-large cc-bg-primary cc-button-full" ' +
+    'style="display:block;margin:0 65px;height:64px">New Game</button>';
+  document.querySelector('.game-over-modal-shell-content').appendChild(row);
+});
+await page.waitForTimeout(700); // a few align ticks
+const late = await page.$eval('#sfctplay-btn', b => ({ cls: b.className, w: Math.round(b.getBoundingClientRect().width),
+  theirs: Math.round(document.querySelector('.game-over-modal-shell-buttons button').getBoundingClientRect().width) }));
+if (!/cc-button-xx-large/.test(late.cls) || /cc-button-x-large/.test(late.cls) || late.w !== late.theirs)
+  fail('the trigger kept the shape it docked with, not their button\'s: ' + JSON.stringify(late));
+console.log(`PASS 22: a button row that lands late still shapes the trigger - xx-large, ${late.w}px like theirs`);
+
 
 console.log('\nALL CHECKS PASSED');
 if (logs.length) console.log('--- page logs ---\n' + logs.join('\n'));

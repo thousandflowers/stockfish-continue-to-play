@@ -1508,6 +1508,11 @@ function alignTrigger() {
   dock.style.left = r.left + 'px';
   dock.style.width = r.width + 'px';
   if (modal) {
+    // Re-read on every tick, not once: their card can be on the page before its
+    // button row is, and a shape taken then stayed x-large under an xx-large New
+    // Game for good - the "sometimes small" button.
+    const btn = document.getElementById('sfctplay-btn');
+    if (btn) dockUnderModal(dock, modal, btn);
     // Over their bottom padding, so their rounded corners are under ours.
     dock.style.top = (r.bottom - (parseFloat(getComputedStyle(anchor).paddingBottom) || 0)) + 'px';
     return;
