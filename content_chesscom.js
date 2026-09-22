@@ -1380,8 +1380,11 @@ const modalShell = (modal) => modal.querySelector('.game-over-modal-shell-conten
 //
 // Their card comes in more than one shape - the v6 one has an x-large Game
 // Review inset 16px, the bots' one an xx-large New Game centred at a narrower
-// width - so our button takes the size classes and the side insets of THEIR
-// last button, whichever card this is, rather than one shape's numbers.
+// width, a signed-in one a full-width Game Review over New / Rematch side by
+// side. So our button spans the whole of THEIR button area (leftmost edge to
+// rightmost edge), and takes the size of their last button - the row it joins
+// - whichever card this is, rather than one shape's numbers. Copying the last
+// button's width put ours at half width under Rematch.
 const BUTTON_SIZE_RE = /^cc-button-(small|medium|large|x-large|xx-large|full)$/;
 
 function dockUnderModal(dock, modal, btn) {
@@ -1389,16 +1392,19 @@ function dockUnderModal(dock, modal, btn) {
   const cs = getComputedStyle(shell);
   const row = shell.querySelector('.game-over-modal-shell-buttons');
   const gap = row ? getComputedStyle(row).rowGap : '8px';
-  const theirs = row && [...row.querySelectorAll('.cc-button-component')].pop();
+  const buttons = row ? [...row.querySelectorAll('.cc-button-component')]
+    .filter(b => b.getBoundingClientRect().width) : [];
+  const theirs = buttons[buttons.length - 1];
   let left = 16, right = 16;
   if (theirs) {
-    const sizes = [...theirs.classList].filter(c => BUTTON_SIZE_RE.test(c));
+    const sizes = [...theirs.classList].filter(c => BUTTON_SIZE_RE.test(c) && c !== 'cc-button-full');
     if (sizes.length) {
       [...btn.classList].filter(c => BUTTON_SIZE_RE.test(c)).forEach(c => btn.classList.remove(c));
       btn.classList.add(...sizes);
     }
-    const r = theirs.getBoundingClientRect(), sr = shell.getBoundingClientRect();
-    if (r.width) { left = Math.round(r.left - sr.left); right = Math.round(sr.right - r.right); }
+    const sr = shell.getBoundingClientRect();
+    left = Math.round(Math.min(...buttons.map(b => b.getBoundingClientRect().left)) - sr.left);
+    right = Math.round(sr.right - Math.max(...buttons.map(b => b.getBoundingClientRect().right)));
   }
   const edge = (cs.boxShadow.match(/(rgba?\([^)]*\))[^,]*inset/) || [])[1];
   const radius = cs.borderBottomLeftRadius;

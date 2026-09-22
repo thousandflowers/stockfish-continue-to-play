@@ -721,6 +721,29 @@ if (!/cc-button-xx-large/.test(late.cls) || /cc-button-x-large/.test(late.cls) |
   fail('the trigger kept the shape it docked with, not their button\'s: ' + JSON.stringify(late));
 console.log(`PASS 22: a button row that lands late still shapes the trigger - xx-large, ${late.w}px like theirs`);
 
+// 22b. The signed-in card: a full-width Game Review over New / Rematch side by
+// side. Ours joins as a row of its own - their whole width, their secondary size
+// - not as a half-width twin of Rematch, the last button in the row.
+await page.evaluate(() => {
+  document.querySelector('.game-over-modal-shell-buttons').innerHTML =
+    '<button class="cc-button-component cc-button-primary cc-button-x-large" style="display:block;margin:0 16px;height:56px">Game Review</button>' +
+    '<div style="display:flex;gap:8px;margin:8px 16px 0">' +
+    '<button class="cc-button-component cc-button-secondary cc-button-large" style="flex:1;height:48px">New 10 min</button>' +
+    '<button class="cc-button-component cc-button-secondary cc-button-large" style="flex:1;height:48px">Rematch</button></div>';
+});
+await page.waitForTimeout(700);
+const signed = await page.evaluate(() => {
+  const R = (e) => e.getBoundingClientRect();
+  const all = [...document.querySelectorAll('.game-over-modal-shell-buttons .cc-button-component')].map(R);
+  const o = R(document.getElementById('sfctplay-btn'));
+  return { cls: document.getElementById('sfctplay-btn').className,
+    ours: [Math.round(o.left), Math.round(o.right)],
+    area: [Math.round(Math.min(...all.map(r => r.left))), Math.round(Math.max(...all.map(r => r.right)))] };
+});
+if (signed.ours.join() !== signed.area.join() || !/cc-button-large\b/.test(signed.cls) || /x-large/.test(signed.cls))
+  fail('the trigger does not join their card as a row of its own: ' + JSON.stringify(signed));
+console.log(`PASS 22b: on the signed-in card the trigger spans their buttons ${signed.area.join('-')}px at their secondary size`);
+
 
 console.log('\nALL CHECKS PASSED');
 if (logs.length) console.log('--- page logs ---\n' + logs.join('\n'));
