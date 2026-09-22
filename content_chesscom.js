@@ -1202,6 +1202,9 @@ function cardButton(text, primary, glyphName) {
   b.className = 'cc-button-component cc-button-x-large game-over-primary-cta-game-over-primary-cta ' +
     (primary ? 'cc-button-primary cc-bg-primary' : 'cc-button-secondary cc-bg-secondary');
   b.setAttribute('data-sfct', 'card-part');
+  // Theirs is an <a>; a <button> alone keeps the system's appearance:auto, the
+  // one computed property that differed from their Game Review button.
+  b.style.appearance = 'none';
   if (glyphName) {
     const icon = glyph(glyphName, 24);
     icon.classList.add('cc-button-icon');
