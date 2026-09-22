@@ -2,7 +2,7 @@
 
 ## How it works
 
-1. **Detect game over** - a content script on Chess.com watches for a *visible* game-over surface and injects a **Continue vs Computer** button: docked under the result card when there is one, under the move-list column when there is not.
+1. **Detect game over** - a content script on Chess.com watches for a *visible* game-over surface and injects a **Keep Playing** button: docked under the result card when there is one, under the move-list column when there is not.
 2. **Capture the position** - on click it reads the FEN of the position currently ON the board, which is the one you are looking at after walking back through the move list, plus the player's colour and the opponent's rating to pick a difficulty.
 3. **Play inline** - it hides the game-over modal and renders the position on the existing Chess.com board. Stockfish runs in a Web Worker; you move by click or drag, the engine replies.
 

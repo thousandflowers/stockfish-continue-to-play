@@ -15,13 +15,13 @@
 ## The problem
 
 You're winning. Your opponent resigns, disconnects, or times out. Game over - but you
-wanted to play it through. This extension adds a **Continue vs Computer** button to the
+wanted to play it through. This extension adds a **Keep Playing** button to the
 game-over screen. Click it and you keep playing the exact final position against
 Stockfish, right there on the Chess.com board, with difficulty matched to your
 opponent's rating.
 
 ```
-Chess.com: Game Over  →  [♟ Continue vs Computer]  →  play the position vs Stockfish (inline)
+Chess.com: Game Over  →  [▶ Keep Playing]  →  play the position vs Stockfish (inline)
 ```
 
 ---
@@ -103,7 +103,7 @@ bash scripts/download-stockfish.sh
 ## How to use
 
 1. Finish (or lose/win) a game on Chess.com.
-2. Click **♟ Continue vs Computer** - on the game-over card, or under the move list when you have come back to a finished game later.
+2. Click **▶ Keep Playing** - on the game-over card, or under the move list when you have come back to a finished game later.
    To start from an earlier position, walk back through the move list first: the button plays whatever is on the board when you press it.
 3. Play. The badge in the top-right shows whose turn it is; click it to stop.
 

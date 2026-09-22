@@ -54,7 +54,7 @@ before you flagged. Maybe you want to see whether that endgame was actually hold
 Chess.com will offer you a rematch or a review, but it will not let you simply keep playing
 the position you were just in.
 
-This extension adds one button to the game-over dialog: "Continue vs Computer". Press it and
+This extension adds one button to the game-over dialog: "Keep Playing". Press it and
 the same board keeps going, against Stockfish, from the exact final position. No redirect, no
 new tab, no re-entering the position by hand.
 
@@ -113,7 +113,7 @@ Keep them as plain text with bare URLs: the description field does not render Ma
 
 ```
 When a game on Chess.com finishes, this extension adds one button to the game-over dialog:
-"Continue vs Computer". Pressing it lets you keep playing the final position against a
+"Keep Playing". Pressing it lets you keep playing the final position against a
 Stockfish chess engine that runs entirely inside your browser, on the same board you were
 already playing on. That is the extension's only function.
 ```

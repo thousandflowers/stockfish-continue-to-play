@@ -1,5 +1,5 @@
 // Chess.com content script for Stockfish Continue to Play.
-// After a game ends, injects a "Continue vs Computer" button. Clicking it hides
+// After a game ends, injects a "Keep Playing" button. Clicking it hides
 // the game-over modal and lets you keep playing the final position vs Stockfish
 // on the original Chess.com board. The engine runs in a Web Worker; correctness
 // (castling, en-passant, 50-move, repetition) is delegated to Stockfish by
@@ -1315,7 +1315,7 @@ function showResultModal(title, subtitle, opts) {
   showCard(card);
 }
 
-// ── Inject the "Continue vs Computer" button ─────────────────────────────────
+// ── Inject the "Keep Playing" button ─────────────────────────────────
 // Docked under their result card, or at the foot of the move-list column when
 // there is none. With neither on the page it is not offered at all.
 
@@ -1355,7 +1355,7 @@ function startContinuation(board, side, strength, fenFromPage) {
 // The same button the result card uses - their secondary x-large, with their
 // play glyph - so it sits under their Game Review as one more of their buttons.
 function makeTriggerButton() {
-  const btn = cardButton('Continue vs Computer', false, 'media-control-play');
+  const btn = cardButton('Keep Playing', false, 'media-control-play');
   btn.id = 'sfctplay-btn';
   // Not part of a game: it outlives every stop, so it must not carry the mark
   // the teardown sweeps. And without that mark, a class with "game-over" in it
@@ -1377,17 +1377,35 @@ const modalShell = (modal) => modal.querySelector('.game-over-modal-shell-conten
 // both below our button - their 8px button gap above it, their 16px under it,
 // their radius, their inset edge on the three sides that are outside. Every
 // value is read off their card as it computes, so a restyle carries over.
-function dockUnderModal(dock, modal) {
+//
+// Their card comes in more than one shape - the v6 one has an x-large Game
+// Review inset 16px, the bots' one an xx-large New Game centred at a narrower
+// width - so our button takes the size classes and the side insets of THEIR
+// last button, whichever card this is, rather than one shape's numbers.
+const BUTTON_SIZE_RE = /^cc-button-(small|medium|large|x-large|xx-large|full)$/;
+
+function dockUnderModal(dock, modal, btn) {
   const shell = modalShell(modal);
   const cs = getComputedStyle(shell);
   const row = shell.querySelector('.game-over-modal-shell-buttons');
   const gap = row ? getComputedStyle(row).rowGap : '8px';
+  const theirs = row && [...row.querySelectorAll('.cc-button-component')].pop();
+  let left = 16, right = 16;
+  if (theirs) {
+    const sizes = [...theirs.classList].filter(c => BUTTON_SIZE_RE.test(c));
+    if (sizes.length) {
+      [...btn.classList].filter(c => BUTTON_SIZE_RE.test(c)).forEach(c => btn.classList.remove(c));
+      btn.classList.add(...sizes);
+    }
+    const r = theirs.getBoundingClientRect(), sr = shell.getBoundingClientRect();
+    if (r.width) { left = Math.round(r.left - sr.left); right = Math.round(sr.right - r.right); }
+  }
   const edge = (cs.boxShadow.match(/(rgba?\([^)]*\))[^,]*inset/) || [])[1];
   const radius = cs.borderBottomLeftRadius;
   Object.assign(dock.style, {
     background: cs.backgroundColor && !/rgba\(0, 0, 0, 0\)|transparent/.test(cs.backgroundColor)
       ? cs.backgroundColor : solidBackground(modal),
-    padding: `${gap === 'normal' ? '8px' : gap} 16px ${cs.paddingBottom}`,
+    padding: `${gap === 'normal' ? '8px' : gap} ${right}px ${cs.paddingBottom} ${left}px`,
     borderRadius: `0 0 ${radius} ${radius}`,
     boxShadow: edge ? `inset 1px 0 0 ${edge}, inset -1px 0 0 ${edge}, inset 0 -1px 0 ${edge}` : 'none',
   });
@@ -1435,7 +1453,7 @@ function injectButtons() {
   dock.dataset.anchor = modal ? 'modal' : 'panel';
   Object.assign(dock.style, { position: 'fixed', zIndex: '999997', boxSizing: 'border-box' });
   if (modal) {
-    dockUnderModal(dock, modal);
+    dockUnderModal(dock, modal, btn);
   } else {
     // The foot of their move-list column: the column's own paint, their 16px
     // around the button.
