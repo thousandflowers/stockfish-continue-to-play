@@ -93,6 +93,9 @@ await btn.waitFor({ timeout: 10000 }).catch(() => fail('Continue button never in
 console.log('PASS 1: button injected —', (await btn.textContent()).trim());
 
 // 2. clicking it starts the inline game
+// Their text node is held here, in the page's world: writing the engine's name
+// must reuse it, never swap it out - Vue keeps patching the node it made.
+await page.evaluate(() => { window.__nameNode = document.querySelector('.user-username').firstChild; });
 await btn.click();
 await page.waitForSelector('html[data-sfct-phase]', { timeout: 10000 }).catch(async () => {
   const row = await rowText();
@@ -200,6 +203,12 @@ console.log(`PASS 7c: selected piece stays above its square (z ${stacking[0]} ov
 
 // 8. stopping restores the board (no leftover overlay)
 await stop();
+const nameKept = await page.evaluate(() => {
+  const el = document.querySelector('.user-username');
+  return { same: el.firstChild === window.__nameNode, text: el.textContent };
+});
+if (!nameKept.same) fail('the opponent row lost its own text node - Vue would patch a detached one');
+if (nameKept.text !== 'opponent') fail('the opponent name was not given back: ' + nameKept.text);
 await page.waitForTimeout(300);
 const left = await page.locator('[data-sfct]').count();
 if (left !== 0) fail(`overlay pieces left after stop: ${left}`);

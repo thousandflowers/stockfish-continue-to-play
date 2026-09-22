@@ -359,13 +359,26 @@ function engineStrength(setting, playerSide) {
 // opponentTextSlot() refuses any node with element children, because writing
 // textContent on one of those deletes those children and hands Vue the same
 // crash by another door.
+// Text written into a node of theirs goes into the text node already there,
+// never through textContent. textContent throws their text node away and puts
+// a new one in; Vue keeps patching the one it made, now detached, so when it
+// reuses that element for something else - a navigation that does not reload is
+// enough - the real words land in the detached node and the page shows ours, or
+// nothing. A leaf with no text node yet (never the case for the ones picked,
+// which are chosen for having text) falls back to textContent.
+function setPageText(el, text) {
+  const node = el.childNodes.length === 1 && el.firstChild.nodeType === Node.TEXT_NODE ? el.firstChild : null;
+  if (node) node.nodeValue = text;
+  else el.textContent = text;
+}
+
 function labelOpponentAsEngine(label, rating) {
   const undo = [];
   const write = (el, text) => {
     if (!el) return false;
     const was = el.textContent;
-    el.textContent = text;
-    undo.push(() => { el.textContent = was; });
+    setPageText(el, text);
+    undo.push(() => { setPageText(el, was); });
     return true;
   };
   write(opponentTextSlot(), label);
@@ -913,7 +926,7 @@ function startRefreshTimer() {
     // and never a string we wrote ourselves treated as theirs.
     const slot = chesscomState._nameSlot;
     if (slot && chesscomState._nameWritten && slot.textContent !== chesscomState._nameWritten) {
-      slot.textContent = chesscomState._nameWritten;
+      setPageText(slot, chesscomState._nameWritten);
     }
   }, REFRESH_INTERVAL_MS);
 }
@@ -1131,7 +1144,7 @@ function updateStatus(text) {
   const el = st._nameSlot;
   if (!el) return; // their row has nothing safe to write: the game still plays
   const line = engineLine(st);
-  if (el.textContent !== line) el.textContent = line;
+  if (el.textContent !== line) setPageText(el, line);
   st._nameWritten = line;
 }
 
@@ -1156,9 +1169,9 @@ function showNotice(text) {
   const el = chesscomState?._nameSlot || opponentTextSlot();
   if (!el) return;
   const was = el.textContent;
-  el.textContent = text;
+  setPageText(el, text);
   setTimeout(() => {
-    try { if (el.textContent === text) el.textContent = chesscomState ? engineLine(chesscomState) : was; }
+    try { if (el.textContent === text) setPageText(el, chesscomState ? engineLine(chesscomState) : was); }
     catch (_) {}
   }, NOTICE_MS);
 }
