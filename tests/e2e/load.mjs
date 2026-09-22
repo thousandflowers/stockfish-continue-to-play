@@ -738,6 +738,67 @@ if (!reset) fail('resetToMainLine was never called - the variation would be left
 console.log('PASS 22f: stopping dropped the variation and restored the main line');
 
 
+// 23. the board component is there, but it will not take our moves - its own
+// result still reads "*", so the bridge's fair-play gate refuses everything. A
+// refusal must cost the native LOOK, never the game: the extension has to notice
+// and draw the position itself. Before this it left a board that never changed,
+// with nothing in the console to say why, which reads as the whole thing being
+// broken.
+const REFUSED = `<!doctype html><html><head>${CC_MARKER_CSS}</head><body style="margin:0">
+<div class="player-row-component player-row-top"><span class="cc-user-rating-white">(1450)</span></div>
+<div class="board-layout-sidebar"><div class="move-list">
+<div class="node white-move main-line-ply">x</div>
+<div class="node black-move main-line-ply">y</div></div></div>
+<wc-chess-board id="board" style="position:relative;display:block;width:640px;height:640px;background:#eee">
+${fenToDivs('4k3/8/8/8/8/8/4P3/4K3')}</wc-chess-board>
+<div class="game-result">1-0</div>
+<script>
+(() => {
+  const b = document.getElementById('board');
+  window.__log = { moves: [], continuation: 0, reset: 0 };
+  b.game = {
+    getFEN: () => '4k3/8/8/8/8/8/4P3/4K3 w - - 0 1',
+    // The DOM says the game is over; their own game object does not agree.
+    getResult: () => '*',
+    isGameOver: () => false, isCheck: () => false,
+    getTurn: () => 1, getPlayingAs: () => 1, getLegalMoves: () => [],
+    createContinuation: () => { window.__log.continuation++; return {}; },
+    move: (a) => { window.__log.moves.push(a); return {}; },
+    resetToMainLine: () => { window.__log.reset++; return {}; },
+  };
+})();
+<\/script></body></html>`;
+await page.route('https://www.chess.com/game/live/refused**', route =>
+  route.fulfill({ status: 200, contentType: 'text/html', body: REFUSED }));
+await page.goto('https://www.chess.com/game/live/refused', { waitUntil: 'domcontentloaded' });
+await page.locator('#sfctplay-btn').waitFor({ timeout: 10000 }).catch(() => fail('no trigger on the refused page'));
+await page.locator('#sfctplay-btn').click();
+await page.waitForFunction(() => /Your move/.test(document.getElementById('sfct-badge')?.textContent || ''),
+  null, { timeout: 60000 }).catch(() => fail('engine never ready on the refused page'));
+await page.waitForTimeout(1200);
+const fb = await page.evaluate(() => ({
+  ours: document.querySelectorAll('[data-sfct="piece"]').length,
+  asked: window.__log.continuation,
+  played: window.__log.moves.length,
+}));
+// The gate has to have held: their board was never touched.
+if (fb.asked !== 0 || fb.played !== 0)
+  fail('the gate let something through on a game with no result: ' + JSON.stringify(fb));
+if (fb.ours < 3) fail(`refused by their board and we drew nothing - a dead board (${fb.ours} pieces)`);
+console.log('PASS 23: refused by their board, so we draw it -', fb.ours, 'pieces, their board untouched');
+
+// …and the game still plays.
+const rbox2 = await page.locator('#board').boundingBox();
+const rsq = (f, r) => ({ x: rbox2.x + (f - 0.5) * rbox2.width / 8, y: rbox2.y + (8 - r + 0.5) * rbox2.height / 8 });
+await page.mouse.click(rsq(5, 2).x, rsq(5, 2).y); await page.waitForTimeout(500);
+await page.mouse.click(rsq(5, 4).x, rsq(5, 4).y); await page.waitForTimeout(1500);
+const moved = await page.$eval('#board', b => !!b.querySelector('[data-sfct="piece"].square-54'));
+if (!moved) fail('the pawn did not move on our own board either');
+console.log('PASS 23b: and the pieces move on our board');
+await page.locator('#sfct-badge').click();
+await page.waitForTimeout(400);
+
+
 console.log('\nALL CHECKS PASSED');
 if (logs.length) console.log('--- page logs ---\n' + logs.join('\n'));
 await ctx.close();

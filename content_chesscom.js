@@ -426,7 +426,9 @@ function showChesscomBoard(fen, color, strengthSetting) {
     // Branch off the position being shown: our moves then land in a variation
     // beside the real game, and resetToMainLine() on stop discards it and
     // hands the game back exactly as it was.
-    if (chesscomState.native) pageCmd('continuation');
+    if (chesscomState.native) {
+      pageCmd('continuation').then(r => { if (!r.ok) fallBackToOverlay(r.value); });
+    }
     syncBoardToState();
     attachPointerHandlers();
     startRefreshTimer();
@@ -570,6 +572,23 @@ function replayCheck() {
   el.style.animation = 'none';
   void el.offsetWidth;
   el.style.animation = '';
+}
+
+// Their board would not take a move — the bridge's own result gate said no, or
+// the component went away under us. Draw the game ourselves from here instead of
+// leaving a board that never changes: a refusal must cost the native LOOK, never
+// the game. Silence was the whole failure: pieces simply stopped moving, with
+// nothing in the console to say why.
+function fallBackToOverlay(why) {
+  const st = chesscomState;
+  if (!st || !st.native) return;
+  st.native = false;
+  warn('page bridge refused (' + why + ') \u2014 drawing the board ourselves');
+  document.getElementById('sfct-board-style')?.remove();
+  injectBoardStyle(false);
+  st._flipped = undefined; // force every piece to be placed again
+  syncBoardToState();
+  showBanner('Chess.com would not take the moves \u2014 playing on our own board.', 5000);
 }
 
 function syncBoardToState() {
@@ -932,7 +951,10 @@ function makePlayerMove(from, to, promo) {
   st.selectedSq = null;
   st.sideToMove = st.engineSide;
   recordMove(st, res.moved);
-  if (st.native) pageCmd('move', { from, to, promotion: promo || undefined });
+  if (st.native) {
+    pageCmd('move', { from, to, promotion: promo || undefined })
+      .then(r => { if (!r.ok) fallBackToOverlay(r.value); });
+  }
   syncBoardToState();
   postCmd(enginePosition());
   engineThink();
@@ -950,8 +972,11 @@ function onEngineMove(uci) {
   st.moves.push(uci);
   st.sideToMove = st.playerSide;
   recordMove(st, res.moved);
-  if (st.native) pageCmd('move', { from: uci.slice(0, 2), to: uci.slice(2, 4),
-    promotion: uci.length > 4 ? uci[4] : undefined });
+  if (st.native) {
+    pageCmd('move', { from: uci.slice(0, 2), to: uci.slice(2, 4),
+      promotion: uci.length > 4 ? uci[4] : undefined })
+      .then(r => { if (!r.ok) fallBackToOverlay(r.value); });
+  }
   st.turnStart = Date.now();
   syncBoardToState();
   updateStatus('Your move');
