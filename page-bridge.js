@@ -28,21 +28,44 @@
     catch (_) { return undefined; }
   };
 
+  // Structured clone chokes on anything of theirs that carries a function, so
+  // every object crosses as plain JSON or not at all.
+  const json = (v) => { try { return JSON.parse(JSON.stringify(v ?? null)); } catch (_) { return null; } };
+
   function snapshot() {
     const el = board();
     const game = el && el.game;
     if (!game) return null;
+    // Measured on live pages: getFEN() is the position being SHOWN, following
+    // the move list as you walk back through it, and it carries the real
+    // castling rights and the real en-passant square - both of which the
+    // page-scraping path can only estimate.
     const fen = read(game, 'getFEN');
     if (typeof fen !== 'string' || fen.split(' ').length < 4) return null;
+    const check = read(game, 'isCheck');
     return {
       fen,
+      // Their own constants, read off getJCEGameCopy(): WHITE 1, BLACK 2.
       turn: read(game, 'getTurn') ?? null,
       playingAs: read(game, 'getPlayingAs') ?? null,
-      over: read(game, 'isGameOver') ?? null,
-      check: read(game, 'isCheck') ?? null,
-      // Shapes here are not documented, so they travel as plain JSON or not at
-      // all; the isolated side decides what it recognises.
-      result: (() => { try { return JSON.parse(JSON.stringify(read(game, 'getResult') ?? null)); } catch (_) { return null; } })(),
+      mode: (read(game, 'getMode') || {}).name ?? null,
+      // Per-node truth about the position on the board: checkmate, stalemate,
+      // draw, threefold, insufficient and fiftyMoveRule all follow the move you
+      // are looking at.
+      //
+      // ONE FIELD IN HERE DOES NOT, and it is the one whose name invites the
+      // mistake: info.gameOver was true at EVERY node of a finished game, move
+      // 10 of 45 included. It says this GAME ended, never this POSITION is
+      // terminal. Their object is published as they built it, misleading key
+      // and all, because reshaping it would only move the lie somewhere else.
+      info: json(read(game, 'getPositionInfo')),
+      // isCheck() answers with a SQUARE ("f8"), not a boolean. The boolean is
+      // info.check. The name here says which one this is.
+      checkSquare: typeof check === 'string' ? check : null,
+      // Both ratings, named outright - no working out which row on the page
+      // belongs to the opponent.
+      headers: json(read(game, 'getHeaders')),
+      result: json(read(game, 'getResult')),
     };
   }
 

@@ -50,17 +50,55 @@ mate.
 Stockfish's `UCI_Elo` range (1320–3190), then sets `UCI_LimitStrength true`. This gives a
 smooth difficulty curve that mirrors the opponent's strength.
 
+## The page-world bridge
+
+`page-bridge.js` runs with `"world": "MAIN"` — inside Chess.com's own JavaScript,
+the only place `document.querySelector('wc-chess-board').game` can be reached from.
+It is read-only by construction: it calls no `move()`, no `resign()`, no `setMode()`,
+and the page world holds no `chrome.*` permissions of its own. It publishes a small
+object over `window.postMessage` every 400 ms and stops there.
+
+Everything below was **measured** on live pages with the extension loaded — a finished
+live game and `/play/computer` — not inferred from their docs, because there are none.
+
+Their board exposes 99 methods. What the bridge takes, and why:
+
+| Field | Source | What it settles |
+|:--|:--|:--|
+| `fen` | `getFEN()` | The position being SHOWN. Follows the move list as you walk back through it, and carries the real castling rights and the real en-passant square. |
+| `turn` | `getTurn()` | `1` = White, `2` = Black — their own constants, off `getJCEGameCopy()`. |
+| `playingAs` | `getPlayingAs()` | Which colour you are, when you are a player at all. `null` to a spectator. |
+| `mode` | `getMode().name` | `"playing"` vs `"observing"`. |
+| `info` | `getPositionInfo()` | `checkmate` / `stalemate` / `draw` / `threefold` / `insufficient` / `fiftyMoveRule`, all following the shown position. |
+| `checkSquare` | `isCheck()` | The square the check is on. |
+| `headers` | `getHeaders()` | Both ratings, named outright — `{ WhiteElo, BlackElo, … }`. |
+| `result` | `getResult()` | `"*"` while a game is being played, `"1-0"` and friends once it is not. |
+
+Two of their names mislead, and both are documented at the point of use rather than
+renamed away:
+
+- **`info.gameOver` is not about the position.** It was `true` at *every* node of a
+  finished game, move 10 of 45 included. It says this GAME ended. The per-node truth is
+  `info.checkmate` / `info.stalemate` / `info.draw`.
+- **`isCheck()` does not return a boolean.** It returns a square, `"f8"`. The boolean is
+  `info.check`. Hence `checkSquare` rather than `check`.
+
+When the bridge is absent — an older Chess.com, a browser where `world: "MAIN"` did not
+take — every consumer falls back to the page-scraping path below, which is exactly what
+shipped before it. The bridge can only add.
+
 ## FEN extraction (fallback chain)
 
 Tried in order; the first that yields a position wins:
 
 | # | Source |
 |:--|:-------|
+| 0 | The bridge's `fen` — `getFEN()` in the page world, the position being shown, with real castling and en passant |
 | 1 | `game-fen` / `fen` attribute on `wc-chess-board` (a full, authoritative FEN) |
 | 2 | Light-DOM piece `<div>`s (`[class*="piece"][class*="square-"]`) → assembled FEN, castling estimated from home squares |
 | 3 | Same piece parsing inside the board's `shadowRoot` |
 
-Source 1 carries real castling/en-passant data, so it wins over the scraped placement.
+Sources 0 and 1 carry real castling/en-passant data, so they win over the scraped placement.
 
 For a scraped position the en-passant field is **not** left blank: the two squares
 Chess.com highlights for the last move give the target exactly, since a double pawn push
@@ -74,9 +112,11 @@ withhold - it will not take a castle away from you. The two counters stay `0 1`:
 continuation is a new game from this position, so counting its fifty-move rule from zero
 is right rather than approximate.
 
-**What actually runs on chess.com today is source 2.** A probe run against live
-chess.com pages (a finished game and `/play/computer`, extension loaded) showed the
-board element carries only `class`, `id` and `style` - no FEN attribute. Earlier
+**What actually runs on chess.com today is source 0**, and source 2 underneath it when
+the bridge is silent. Source 1 never fires: a probe run against live chess.com pages (a
+finished game and `/play/computer`, extension loaded) showed the board element carries
+only `class`, `id` and `style` - no FEN attribute. The same probe confirmed source 0
+holds at every depth of the move list, castling and en passant included. Earlier
 versions also tried React state on the board element and page globals like
 `window.chessground`; both were removed because a content script runs in an isolated
 world where page expandos and page globals are invisible, so those branches could
@@ -85,7 +125,9 @@ until the first move, after which Stockfish tracks them from the move list.
 
 ## Side to move
 
-Only needed when the position is scraped (the usual case), and the hardest thing on the
+Only needed when the position is scraped, which the bridge has made the uncommon case
+rather than the usual one - a bridge FEN carries the side to move in its own field. It
+stays the hardest thing on the
 page to be sure about - because the placement follows the move list while a naive turn
 reading does not. Get it wrong and the game starts with the wrong player up, which you
 only notice once the engine moves a piece it should not have been able to touch.
@@ -116,7 +158,14 @@ that attribute marks move *pairs*, so a live board reported "black to move" both
 
 ## Opponent rating
 
-`getOpponentElo()` reads the first rating-looking number (`^\(?\d{3,4}\)?$`, chess.com
+`eloFromHeaders()` takes it straight from the bridge's `headers` when they are there:
+their board names both ratings, so knowing which colour you play is enough. A bot game
+reports `{ BlackElo: "300", WhiteElo: "null" }` - the bot's rating exact, and a
+logged-out player's absent rating arriving as that four-letter string, which is refused
+rather than turned into a number.
+
+Underneath it, unchanged, the page-scraping path: `getOpponentElo()` reads the first
+rating-looking number (`^\(?\d{3,4}\)?$`, chess.com
 renders bot ratings as `(250)`) inside the opponent's player row, matched as
 `[class*="player"][class*="top"]` - chess.com has renamed that row repeatedly
 (`board-player-component` → `player-component player-top` → `player-row-top`), so the

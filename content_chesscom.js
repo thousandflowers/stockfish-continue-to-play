@@ -318,9 +318,17 @@ function injectBoardStyle() {
 
 // Engine strength: 'auto' matches the opponent you just played, anything else is
 // a fixed rating ('max' = no limit at all).
-function engineStrength(setting) {
+//
+// On 'auto' the bridge answers first: their headers name both ratings, so the
+// opponent's is read rather than worked out from which row sits at the top of
+// the page. The scraper stays underneath for the pages the bridge cannot reach,
+// and its own 1500 stays the last word - calibrating on the wrong player is the
+// failure both paths exist to avoid.
+function engineStrength(setting, playerSide) {
   if (setting === 'max') return { label: 'full strength', uciElo: null };
-  const rating = setting && setting !== 'auto' ? parseInt(setting, 10) : getOpponentElo();
+  const rating = setting && setting !== 'auto'
+    ? parseInt(setting, 10)
+    : (eloFromHeaders(pageState?.headers, playerSide) ?? getOpponentElo());
   return { label: String(rating), uciElo: eloToUCIElo(rating) };
 }
 
@@ -344,7 +352,7 @@ function showChesscomBoard(fen, color, strengthSetting) {
     const sideToMove = fenSide || 'w';
     const playerSide = color === 'white' ? 'w' : 'b';
     const engineSide = playerSide === 'w' ? 'b' : 'w';
-    const strength = engineStrength(strengthSetting);
+    const strength = engineStrength(strengthSetting, playerSide);
 
     const session = ++sessionId;
     const board = findActiveBoard();

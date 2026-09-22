@@ -8,6 +8,17 @@ to the release its zips were published under.
 
 ### Added
 
+- **The position now comes from Chess.com's own board.** A second script runs in
+  the page's own JavaScript world, where their board component is reachable, and
+  reads the position being shown straight from it - castling rights and the
+  en-passant square included, both of which had to be estimated when all this
+  extension could see was the piece divs. It reads and nothing else: no move, no
+  resign, no mode change, and the page world holds no extension permissions of
+  its own. Where it cannot reach - an older Chess.com, a browser that ignores
+  `world: "MAIN"` - everything falls back to the scraping that shipped before.
+- **The engine is calibrated on the opponent's real rating.** Their board names
+  both ratings outright, so a bot rated 300 is played as 300 instead of as
+  whichever rating-shaped number the page happened to show first.
 - **Continue from the position you are looking at, not only the one the game
   ended on.** Walk back through the move list to the move where it went wrong
   and press Continue from there: lose to a mate, rewind three moves, play it

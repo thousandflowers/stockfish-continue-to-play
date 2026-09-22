@@ -299,3 +299,29 @@ describe('isInsufficientMaterial', () => {
     expect(c.isInsufficientMaterial({ e1: 'K', b1: 'N', g1: 'N', e8: 'k' })).toBe(false);
   });
 });
+
+// Header shapes below are copied from a live probe, not invented: a bot game on
+// /play/computer while logged out, and a finished live game on /game/live/.
+describe('eloFromHeaders', () => {
+  const BOT = { Event: 'Play vs Bot', White: 'null', Black: 'Cliff - Triangle', Result: '*', BlackElo: '300', WhiteElo: 'null' };
+  const LIVE = { White: 'Hikaru', Black: 'poohineedyou', Result: '1-0', WhiteElo: '3370', BlackElo: '2997' };
+
+  it('reads the opponent, never the player', () => {
+    expect(c.eloFromHeaders(BOT, 'w')).toBe(300);
+    expect(c.eloFromHeaders(LIVE, 'w')).toBe(2997);
+    expect(c.eloFromHeaders(LIVE, 'b')).toBe(3370);
+  });
+
+  it('a logged-out player has no rating, and it arrives as the string "null"', () => {
+    expect(c.eloFromHeaders(BOT, 'b')).toBe(null);
+  });
+
+  it('gives up rather than guessing', () => {
+    expect(c.eloFromHeaders(null, 'w')).toBe(null);
+    expect(c.eloFromHeaders({}, 'w')).toBe(null);
+    expect(c.eloFromHeaders(LIVE, undefined)).toBe(null);
+    expect(c.eloFromHeaders(LIVE, 'white')).toBe(null);
+    expect(c.eloFromHeaders({ WhiteElo: '0', BlackElo: '-5' }, 'w')).toBe(null);
+    expect(c.eloFromHeaders({ BlackElo: 2997 }, 'w')).toBe(2997);
+  });
+});
