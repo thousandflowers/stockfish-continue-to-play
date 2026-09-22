@@ -55,20 +55,25 @@ Chess.com will offer you a rematch or a review, but it will not let you simply k
 the position you were just in.
 
 This extension adds one button to the game-over dialog: "Keep Playing". Press it and
-the same board keeps going, against Stockfish, from the exact final position. No redirect, no
-new tab, no re-entering the position by hand.
+the same board keeps going, against Stockfish, from the position you are looking at - the
+final one, or any earlier move you walked back to. No redirect, no new tab, no re-entering
+the position by hand.
 
 HOW IT WORKS
 
 - Finish a game on Chess.com.
-- The button appears on the game-over dialog.
-- Play on. The badge in the top right shows whose turn it is; click it to stop and the
-  original board comes straight back.
+- "Keep Playing" appears in the game-over dialog, or under the move list on a finished game
+  you came back to. Walk back to any move first if you want to replay from there.
+- Play on. Stockfish takes the opponent's place in the player row; the arrow keys step
+  through the moves; Esc or the close button stops, and the original board comes straight
+  back.
 
 WHAT IT DOES WELL
 
 - Inline on the real board. It is the Chess.com board you were already looking at, not a
-  copy on another site.
+  copy on another site - and it looks like Chess.com: the result card, the promotion
+  picker, the move hints and the button are built from Chess.com's own page styles, so
+  nothing of the extension sits on top of the page.
 - Adaptive difficulty. By default the engine is sized to the rating of the opponent you just
   played, so the continuation feels like the game did. You can override it: 800, 1200, 1600,
   2000, or full strength.
@@ -135,9 +140,12 @@ form asks about `content_scripts.matches` instead:
 
 ```
 The extension works exclusively on Chess.com game pages. It needs access to those pages to
-read the final position from the board after a game ends and to draw the continued game on
-that same board. It makes no network requests to Chess.com and does not read or transmit
-account data, cookies, or anything the user did not already have on screen.
+read the position from the board after a game ends and to draw the continued game on that
+same board. A second, read-only script runs in the page's own context to read the position,
+side to move and ratings from Chess.com's board component; it calls nothing that changes a
+game and holds no extension permissions. The extension makes no network requests to
+Chess.com and does not read or transmit account data, cookies, or anything the user did not
+already have on screen.
 ```
 
 ### Are you using remote code?
