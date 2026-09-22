@@ -62,6 +62,20 @@
       // isCheck() answers with a SQUARE ("f8"), not a boolean. The boolean is
       // info.check. The name here says which one this is.
       checkSquare: typeof check === 'string' ? check : null,
+      // The board theme's own highlight, stated by them rather than sampled off a
+      // square that may not be on the board at the moment we look:
+      // themeAssets.board.config.highlightSquareHex is "#10983d" on a green
+      // board, and highlightOpacity the strength it is drawn at. Sampling gave
+      // the right answer right up until their last-move highlight was absent,
+      // and then the class default painted a YELLOW square on a green board.
+      theme: (() => {
+        const o = read(game, 'getOptions') || {};
+        const cfg = o.themeAssets && o.themeAssets.board && o.themeAssets.board.config;
+        return json({
+          highlightHex: (cfg && cfg.highlightSquareHex) || null,
+          highlightOpacity: o.highlightOpacity ?? null,
+        });
+      })(),
       // Both ratings, named outright - no working out which row on the page
       // belongs to the opponent.
       headers: json(read(game, 'getHeaders')),

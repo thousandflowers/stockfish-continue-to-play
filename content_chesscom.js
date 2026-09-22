@@ -561,10 +561,26 @@ const RING_RATIO = 7.5 / 86;
 const HIGHLIGHT_OPACITY = '.5';
 
 function highlightPaint(board) {
+  const st = chesscomState;
+  // Their own answer first: the board theme states its highlight colour and the
+  // strength it is drawn at, so there is nothing to guess and nothing to sample.
+  const theme = pageState?.theme;
+  if (theme?.highlightHex) {
+    return 'background-color:' + theme.highlightHex +
+      ';opacity:' + (theme.highlightOpacity ?? HIGHLIGHT_OPACITY);
+  }
+  // Settled once and remembered. Sampling on every render looked fine until
+  // their last-move highlight was not on the board at that instant - picking a
+  // piece up and putting it straight back is enough - and then the class's own
+  // default took over: a YELLOW square on a green board, which is not a colour
+  // this extension is entitled to choose.
+  if (st?._paint) return st._paint;
   const theirs = board.querySelector('.highlight:not([data-sfct])');
   if (!theirs) return 'opacity:' + HIGHLIGHT_OPACITY;
   const s = getComputedStyle(theirs);
-  return 'background-color:' + s.backgroundColor + ';opacity:' + (s.opacity || HIGHLIGHT_OPACITY);
+  const paint = 'background-color:' + s.backgroundColor + ';opacity:' + (s.opacity || HIGHLIGHT_OPACITY);
+  if (st) st._paint = paint;
+  return paint;
 }
 
 function makePieceNode(pc) {
@@ -725,7 +741,7 @@ function attachPointerHandlers() {
   let dragStart = null;
   // The piece being carried, where the finger first touched it, and whether it
   // has travelled far enough to count as carried at all.
-  let dragEl = null, dragFrom = null, dragMoved = false;
+  let dragEl = null, dragFrom = null, dragMoved = false, selectedOnDown = false;
   const currentBoard = () => {
     if (!chesscomState) return null;
     const b = chesscomState.board;
@@ -754,9 +770,14 @@ function attachPointerHandlers() {
     dragEl = mine ? [...ours(b, 'piece')].find(el => el.dataset.sq === sq) || null : null;
     dragFrom = { x: e.clientX, y: e.clientY };
     dragMoved = false;
+    selectedOnDown = false;
     if (dragEl) {
       dragEl.dataset.sfctBase = dragEl.style.transform;
       try { b.setPointerCapture?.(e.pointerId); } catch (_) {}
+      // Selected on the way DOWN, the way their board does it, so the legal
+      // squares are lit while the piece is in the air rather than only after it
+      // has landed. Carrying a piece with nowhere marked to put it is guesswork.
+      if (chesscomState.selectedSq !== sq) { handleSquareClick(sq); selectedOnDown = true; }
     }
     e.preventDefault(); e.stopPropagation();
   };
@@ -814,7 +835,9 @@ function attachPointerHandlers() {
     // A press that never travelled is a click, whatever square it ended on -
     // a finger that slides three pixels off the square it started on was still
     // pointing at that square.
-    if (!carried || endSq === dragStart) handleSquareClick(dragStart);
+    // A press that selected on the way down has already done its work; letting
+    // the click run again would toggle the selection straight back off.
+    if (!carried || endSq === dragStart) { if (!selectedOnDown) handleSquareClick(dragStart); }
     else handleDragMove(dragStart, endSq);
     dragStart = null;
     syncBoardToState(); // a refused move leaves the piece under the finger otherwise
