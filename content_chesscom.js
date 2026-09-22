@@ -516,6 +516,22 @@ function makePieceNode(pc) {
   return el;
 }
 
+// The paint Chess.com actually uses for a highlighted square, copied off one of
+// its own. Their theme overrides the .highlight rule, so the rule's own value is
+// not what anybody sees. Falls back to that value at an opacity that at least
+// does not hide the piece underneath, for a board that is showing no highlight
+// of its own to copy.
+function highlightPaint(board) {
+  const theirs = board.querySelector('[class*="highlight"]:not([data-sfct])');
+  if (theirs) {
+    const s = getComputedStyle(theirs);
+    if (s.backgroundColor && s.backgroundColor !== 'rgba(0, 0, 0, 0)') {
+      return { background: s.backgroundColor, opacity: s.opacity };
+    }
+  }
+  return { background: 'rgb(255,255,51)', opacity: '0.42' };
+}
+
 // Restart Chess.com's grow / wiggle / shrink on the checked king.
 function replayCheck() {
   const el = document.querySelector('[data-sfct="check"] .sfct-check-el');
@@ -623,9 +639,20 @@ function syncBoardToState() {
       const sel = document.createElement('div');
       sel.setAttribute('data-sfct', 'sel');
       sel.className = 'highlight';
-      sel.style.cssText = SQUARE_BOX + 'z-index:2';
+      // Their own last-move highlight is on the board while you play, so its
+      // computed paint is copied off it. The `.highlight` base rule is a solid
+      // rgb(255,255,51) that nobody ever sees on a real board — the theme
+      // overrides it to a translucent green, the same way it overrides the
+      // capture ring's declared 5px. Taking the class alone gave us the raw
+      // yellow, opaque, which is not their colour and hides what it marks.
+      const paint = highlightPaint(board);
+      // FIRST child, not last: Chess.com's highlights sit under the pieces and
+      // ours has to as well. Appended at the end it painted OVER the piece and
+      // the piece you had just picked up vanished until the move was made.
+      sel.style.cssText = SQUARE_BOX +
+        `background:${paint.background};opacity:${paint.opacity}`;
       place(sel, selectedSq);
-      board.appendChild(sel);
+      board.insertBefore(sel, board.firstChild);
     }
     const squarePx = board.getBoundingClientRect().width / 8;
     for (const dest of dests || []) {

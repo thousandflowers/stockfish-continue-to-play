@@ -641,19 +641,38 @@ console.log('PASS 22: native mode - we paint nothing,', nat.theirs, 'of their pi
 // A move has to reach THEIR board, with from and to.
 const nbox = await page.locator('#board').boundingBox();
 const nsq = (f, r) => ({ x: nbox.x + (f - 0.5) * nbox.width / 8, y: nbox.y + (8 - r + 0.5) * nbox.height / 8 });
-await page.mouse.click(nsq(5, 2).x, nsq(5, 2).y); await page.waitForTimeout(500);
+await page.mouse.click(nsq(5, 2).x, nsq(5, 2).y); await page.waitForTimeout(700);
+// Picking a piece up must not hide it. The selected square is marked with a
+// node of our own, and appending it last painted it OVER the piece - which
+// vanished until the move was played - while the `.highlight` base rule is a
+// solid yellow the theme always overrides.
+const sel = await page.evaluate(() => {
+  const b = document.getElementById('board');
+  const kids = [...b.children];
+  const mark = b.querySelector('[data-sfct="sel"]');
+  const piece = [...b.querySelectorAll('[class*="piece"]')].find(e => e.className.includes('square-52'));
+  return { has: !!mark, markAt: kids.indexOf(mark), pieceAt: kids.indexOf(piece),
+    pieceShown: !!piece && getComputedStyle(piece).display !== 'none',
+    opacity: mark ? getComputedStyle(mark).opacity : null };
+});
+if (!sel.has) fail('nothing marked the square you picked up from');
+if (!sel.pieceShown) fail('the piece vanished when it was picked up');
+if (!(sel.markAt < sel.pieceAt))
+  fail(`the marker is painted over the piece (marker at ${sel.markAt}, piece at ${sel.pieceAt})`);
+if (parseFloat(sel.opacity) >= 1) fail('the marker is opaque, so it hides what it marks');
+console.log(`PASS 22b: picked-up piece still shown, marker under it at ${sel.markAt} and translucent (${sel.opacity})`);
 await page.mouse.click(nsq(5, 4).x, nsq(5, 4).y); await page.waitForTimeout(1500);
 const played = await page.evaluate(() => window.__log.moves);
 if (!played.some(m => m.from === 'e2' && m.to === 'e4'))
   fail('the move never reached their board: ' + JSON.stringify(played));
-console.log('PASS 22b: the move went to their board -', JSON.stringify(played[0]));
+console.log('PASS 22c: the move went to their board -', JSON.stringify(played[0]));
 
 // …and stopping hands the real game back.
 await page.locator('#sfct-badge').click();
 await page.waitForTimeout(800);
 const reset = await page.evaluate(() => window.__log.reset);
 if (!reset) fail('resetToMainLine was never called - the variation would be left on the game');
-console.log('PASS 22c: stopping dropped the variation and restored the main line');
+console.log('PASS 22d: stopping dropped the variation and restored the main line');
 
 
 console.log('\nALL CHECKS PASSED');
