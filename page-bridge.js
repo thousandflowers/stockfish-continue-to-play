@@ -26,7 +26,23 @@
   const CHANNEL = 'sfct-page-state';
   const POLL_MS = 400;
 
-  const board = () => document.querySelector('wc-chess-board, chess-board');
+  // The LARGEST VISIBLE board, the same rule the content script uses to pick the
+  // one it plays on. querySelector takes the first in the document, and a page
+  // carrying more than one — a review page does — then has the two of us reading
+  // and drawing on different boards.
+  function board() {
+    const all = [...document.querySelectorAll('wc-chess-board, chess-board')]
+      .filter(b => document.body.contains(b));
+    let best = null, bestW = 0;
+    for (const b of all) {
+      const r = b.getBoundingClientRect();
+      if (r.width > bestW) { best = b; bestW = r.width; }
+    }
+    // A width of zero everywhere means nothing has been laid out yet — or there
+    // is no layout engine at all, which is how the tests run. Take the first
+    // rather than deciding there is no board.
+    return bestW > 0 ? best : (all[0] || null);
+  }
 
   // Every read is wrapped: this is an undocumented surface, and a getter that
   // throws must cost us one field, never the whole snapshot.
