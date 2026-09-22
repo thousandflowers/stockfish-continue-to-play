@@ -408,6 +408,15 @@ function showChesscomBoard(fen, color, strengthSetting) {
       strengthSetting, finished: false,
       // Chess.com draws the game when we can reach their board.
       native: !!pageState,
+      // How far back through the move list this position sits. A rematch has to
+      // come back here: resetToMainLine() lands at the END of the game, so
+      // branching straight after it restarts from the finish — which is over
+      // already, and the new game ended the instant it began.
+      pliesBack: (() => {
+        const total = plyNodes().length;
+        const at = plyFromUrl();
+        return at && total ? Math.max(0, total - at) : 0;
+      })(),
       // Seconds per move in the game just played, when its clocks are on the page.
       gamePaceMs: (averageMoveSeconds() || 0) * 1000,
       yourPaces: [],
@@ -472,7 +481,10 @@ function hideChesscomBoard() {
   // Dropping this un-hides Chess.com's own pieces again.
   document.getElementById('sfct-board-style')?.remove();
   chesscomState?._restoreOpponentName?.();
-  if (chesscomState?.board) chesscomState.board.style.touchAction = '';
+  if (chesscomState?.board) {
+    chesscomState.board.style.touchAction = '';
+    chesscomState.board.removeAttribute('data-sfct-state');
+  }
   // Drop our overlay pieces/dots so the board shows Chess.com's again.
   // _sfctCleanup first: a card removed without it leaves its resize/scroll
   // listeners on window, holding the detached node alive.
@@ -511,14 +523,18 @@ function dismissResult() {
   hideChesscomBoard();
 }
 
-function rematch() {
+async function rematch() {
   const st = chesscomState;
   if (!st) return;
-  const { startFen, playerSide, strengthSetting } = st;
+  const { startFen, playerSide, strengthSetting, native, pliesBack } = st;
   const card = document.getElementById('sfct-result');
   card?._sfctCleanup?.();
   card?.remove();
-  hideChesscomBoard();
+  hideChesscomBoard(); // this is what sends resetToMainLine
+  // …which leaves their board at the end of the real game. Walk it back to where
+  // the continuation began before branching again. Messages are handled in the
+  // order they are posted, so this lands after the reset.
+  if (native && pliesBack > 0) await pageCmd('backward', { n: pliesBack });
   showChesscomBoard(startFen, playerSide === 'w' ? 'white' : 'black', strengthSetting);
 }
 
@@ -786,7 +802,6 @@ function startRefreshTimer() {
     // board node — put them back. Not in native mode: there are never any of
     // our pieces there, so this test is always true and would rebuild the
     // markers once a second for nothing.
-    alignStatus();
     // Never leave a blank board. Our style hides Chess.com's pieces so ours can
     // stand in their place; if ours are not there, the board shows nothing at
     // all and the game is unplayable however well the engine is running behind
@@ -1001,74 +1016,22 @@ function onEngineMove(uci) {
 }
 
 // ── Status badge & banner ────────────────────────────────────────────────────
+// No badge, no pill, no strip. Who you are playing is on the opponent's own
+// player card, which reads Stockfish for as long as the game runs; the state
+// itself is kept as an attribute on the board rather than drawn anywhere.
+// Every version of this we painted got in the way of something: it sat on the
+// clock, it docked over their controls, it floated in a corner.
 function showStatusBadge(text) {
   document.getElementById('sfct-badge')?.remove();
   document.getElementById('sfct-result')?.remove();
-  // A pill that sits beside the opponent's player card — which already reads
-  // Stockfish and their rating — instead of a panel docked anywhere on the page.
-  //
-  // It lives in <body> and is POSITIONED over that row, never inserted into it.
-  // Chess.com renders the player rows with Vue, and an unexpected child makes
-  // their next patch throw "insertBefore … not a child of this node", which
-  // takes the board component down with it: pieces stop moving and the layout
-  // collapses. This file has the scar twice over; appending here was the third.
-  const badge = document.createElement('div');
-  badge.id = 'sfct-badge';
-  badge.setAttribute('data-sfct', 'status');
-  badge.title = 'Stop playing vs Stockfish';
-  Object.assign(badge.style, {
-    position: 'fixed', zIndex: '999997',
-    display: 'inline-flex', alignItems: 'center', gap: '6px',
-    padding: '2px 8px', borderRadius: '999px',
-    backgroundColor: 'var(--color-bg-input, rgba(255,255,255,.12))',
-    color: 'var(--color-text-default, #ddd)',
-    fontSize: '12px', lineHeight: '1.6', whiteSpace: 'nowrap', cursor: 'pointer',
-  });
-  const span = document.createElement('span');
-  span.id = 'sfct-badge-text';
-  span.textContent = text;
-  const stop = document.createElement('span');
-  stop.textContent = '\u00d7';
-  Object.assign(stop.style, { opacity: '.6', fontWeight: '700' });
-  badge.append(span, stop);
-  badge.onclick = dismissResult;
-  document.body.appendChild(badge);
-  alignStatus();
+  updateStatus(text);
 }
 
-// Park the pill at the right-hand end of the opponent's row, without being part
-// of it. Falls to the bottom of the board when there is no row to sit beside.
-function alignStatus() {
-  const badge = document.getElementById('sfct-badge');
-  if (!badge) return;
-  const row = opponentRow();
-  const r = row?.getBoundingClientRect();
-  const b = badge.getBoundingClientRect();
-  if (r && r.width) {
-    // The clock lives at the right-hand end of that row, so the row's own edge
-    // is the wrong boundary — the pill landed on top of it. Stop at whichever
-    // comes first.
-    let limit = r.right;
-    for (const c of document.querySelectorAll('[class*="clock"]')) {
-      const cr = c.getBoundingClientRect();
-      if (!cr.width) continue;
-      const overlapsRow = cr.bottom > r.top && cr.top < r.bottom;
-      if (overlapsRow && cr.left < limit) limit = cr.left;
-    }
-    badge.style.left = Math.max(4, limit - b.width - 8) + 'px';
-    badge.style.top = Math.round(r.top + (r.height - b.height) / 2) + 'px';
-    return;
-  }
-  const board = chesscomState?.board?.getBoundingClientRect();
-  badge.style.left = (board ? board.left + board.width / 2 - b.width / 2 : 12) + 'px';
-  badge.style.top = (board ? board.bottom + 8 : window.innerHeight - 40) + 'px';
-}
-
+// An attribute on their board, not an element of ours: nothing to overlap, and
+// still readable by anything that wants to know what the extension is doing.
+// Cleared on teardown with the rest.
 function updateStatus(text) {
-  const el = document.getElementById('sfct-badge-text');
-  if (!el) return;
-  // Just the state. Who you are playing is on the opponent's own card.
-  el.textContent = '♟ ' + text;
+  chesscomState?.board?.setAttribute('data-sfct-state', text);
 }
 
 function ensureAnimStyle() {

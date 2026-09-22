@@ -85,7 +85,7 @@
   // ── Commands ───────────────────────────────────────────────────────────────
   // Only these four. `legal` reads; the other three change the board and are
   // gated on the game having a result.
-  const CHANGES = new Set(['continuation', 'move', 'reset']);
+  const CHANGES = new Set(['continuation', 'move', 'reset', 'backward']);
 
   function hasResult(game) {
     try {
@@ -100,6 +100,10 @@
     continuation: (g) => g.createContinuation(),
     move: (g, a) => g.move(a),
     reset: (g) => g.resetToMainLine(),
+    // Walk the move list back, so a rematch can return to the position the
+    // continuation began from instead of branching at the end of the game.
+    backward: (g, a) => { const n = Math.min(400, Math.max(0, (a && a.n) | 0));
+      for (let i = 0; i < n; i++) g.moveBackward(); },
     legal: (g, a) => (a && a.square ? g.getLegalMovesForSquare(a.square) : g.getLegalMoves()),
   };
 

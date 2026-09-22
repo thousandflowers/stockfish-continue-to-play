@@ -38,6 +38,7 @@ const mountBoard = (result) => {
     move: (a) => { called.push('move:' + JSON.stringify(a)); return {}; },
     resetToMainLine: () => { called.push('reset'); return {}; },
     getLegalMoves: () => { called.push('legal'); return ['e2e4', 'd2d4']; },
+    moveBackward: () => { called.push('back'); },
     getLegalMovesForSquare: () => { called.push('legalSquare'); return ['e2e4']; },
   };
   const el = document.createElement('wc-chess-board');
@@ -97,6 +98,27 @@ describe('page-bridge fair-play gate', () => {
     expect((await send('continuation')).ok).toBe(true);
     expect((await send('reset')).ok).toBe(true);
     expect(called).toEqual(['continuation', 'reset']);
+  });
+
+  it('refuses to walk the move list back while a game is being played', async () => {
+    mountBoard('*');
+    expect((await send('backward', { n: 3 })).ok).toBe(false);
+    expect(called).toEqual([]);
+  });
+  it('walks back exactly as many plies as asked, once the game has a result', async () => {
+    // A rematch has to return to where the continuation began: resetToMainLine
+    // lands at the END of the game, and branching there restarts from a position
+    // that is already over.
+    mountBoard('1-0');
+    expect((await send('backward', { n: 3 })).ok).toBe(true);
+    expect(called).toEqual(['back', 'back', 'back']);
+  });
+  it('a nonsense count walks back nowhere rather than forever', async () => {
+    mountBoard('1-0');
+    await send('backward', { n: -5 });
+    await send('backward', {});
+    await send('backward', { n: 1e9 });
+    expect(called.length).toBe(400); // clamped, not unbounded
   });
 
   it('reading legal moves is allowed even mid-game - it changes nothing', async () => {
