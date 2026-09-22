@@ -66,22 +66,27 @@ Their board exposes 99 methods. What the bridge takes, and why:
 | Field | Source | What it settles |
 |:--|:--|:--|
 | `fen` | `getFEN()` | The position being SHOWN. Follows the move list as you walk back through it, and carries the real castling rights and the real en-passant square. |
-| `turn` | `getTurn()` | `1` = White, `2` = Black — their own constants, off `getJCEGameCopy()`. |
 | `playingAs` | `getPlayingAs()` | Which colour you are, when you are a player at all. `null` to a spectator. |
-| `mode` | `getMode().name` | `"playing"` vs `"observing"`. |
-| `info` | `getPositionInfo()` | `checkmate` / `stalemate` / `draw` / `threefold` / `insufficient` / `fiftyMoveRule`, all following the shown position. |
-| `checkSquare` | `isCheck()` | The square the check is on. |
 | `headers` | `getHeaders()` | Both ratings, named outright — `{ WhiteElo, BlackElo, … }`. |
-| `result` | `getResult()` | `"*"` while a game is being played, `"1-0"` and friends once it is not. |
+| `theme` | `getOptions().themeAssets` | The board theme's own highlight colour and opacity, instead of sampling a square. |
 
-Two of their names mislead, and both are documented at the point of use rather than
-renamed away:
+Measured too, and not published until something reads them:
 
-- **`info.gameOver` is not about the position.** It was `true` at *every* node of a
+| Read | What it says |
+|:--|:--|
+| `getTurn()` | `1` = White, `2` = Black — their own constants, off `getJCEGameCopy()`. |
+| `getMode().name` | `"playing"` vs `"observing"`. |
+| `getPositionInfo()` | `checkmate` / `stalemate` / `draw` / `threefold` / `insufficient` / `fiftyMoveRule`, all following the shown position. |
+| `isCheck()` | The square the check is on. |
+| `getResult()` | `"*"` while a game is being played, `"1-0"` and friends once it is not. |
+
+Two of their names mislead, and whoever publishes them next must not rename the lie away:
+
+- **`getPositionInfo().gameOver` is not about the position.** It was `true` at *every* node of a
   finished game, move 10 of 45 included. It says this GAME ended. The per-node truth is
-  `info.checkmate` / `info.stalemate` / `info.draw`.
+  its `checkmate` / `stalemate` / `draw`.
 - **`isCheck()` does not return a boolean.** It returns a square, `"f8"`. The boolean is
-  `info.check`. Hence `checkSquare` rather than `check`.
+  `getPositionInfo().check`.
 
 When the bridge is absent — an older Chess.com, a browser where `world: "MAIN"` did not
 take — every consumer falls back to the page-scraping path below, which is exactly what
@@ -152,10 +157,10 @@ attribute, not just the card itself. Both mistakes were made in order and caught
 by the e2e run: the blocker hid our card, and then hid its insides, leaving a
 card of full width and no height.
 
-Where their stylesheet is not on the page at all - a fixture, or class names that
-have moved on again - `dressCardIfUnstyled()` measures what the card actually
-computed to and paints our own plain dark box instead. Inline styles outrank class
-rules, so it can only ever run when theirs did not.
+There is no painted fallback for a card whose classes computed to nothing. Their
+modal stylesheet was measured present on a finished game reopened later - the one
+case that reaches the hand-built card - so a fallback would only ever run on a
+fixture.
 
 ## FEN extraction (fallback chain)
 
@@ -166,7 +171,6 @@ Tried in order; the first that yields a position wins:
 | 0 | The bridge's `fen` — `getFEN()` in the page world, the position being shown, with real castling and en passant |
 | 1 | `game-fen` / `fen` attribute on `wc-chess-board` (a full, authoritative FEN) |
 | 2 | Light-DOM piece `<div>`s (`[class*="piece"][class*="square-"]`) → assembled FEN, castling estimated from home squares |
-| 3 | Same piece parsing inside the board's `shadowRoot` |
 
 Sources 0 and 1 carry real castling/en-passant data, so they win over the scraped placement.
 
@@ -254,8 +258,7 @@ to the strongest explicit rating node on the page, then to 1500.
 ├── stockfish.js          # Stockfish loader (21 KB, downloaded, git-ignored)
 ├── stockfish.wasm        # Stockfish engine (7 MB, downloaded, git-ignored)
 ├── stockfish.sha256      # Pinned engine checksums (both files)
-├── manifest.json         # Chrome MV3 manifest
-├── manifest-firefox.json # Firefox MV3 manifest (Gecko 128+)
+├── manifest.json         # MV3 manifest (Firefox's is derived by scripts/firefox-manifest.py)
 ├── tests/                # vitest (jsdom): chess-core + chess-dom, with HTML fixtures
 │   └── e2e/load.mjs      # real-browser end-to-end run (headed locally, headless in CI)
 ├── icons/                # 16 / 32 / 48 / 128
@@ -271,7 +274,7 @@ via `module.exports` for the tests.
 | Browser | Status | Notes |
 |:--------|:------:|:------|
 | Chrome MV3 | ✅ | `manifest.json` - also Edge / Brave / Arc / Opera |
-| Firefox MV3 | ✅ | `manifest-firefox.json`, Gecko 128+ |
+| Firefox MV3 | ✅ | `scripts/firefox-manifest.py`, Gecko 128+ |
 | Safari | ❌ | Would need the Safari Web Extension Converter + a `browser.*` shim |
 
 ## Testing

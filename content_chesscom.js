@@ -28,7 +28,6 @@ const PACE_SAMPLES = 3; // how many of your own recent moves the pace follows
 const ENGINE_INIT_TIMEOUT_MS = 15000;
 const REFRESH_INTERVAL_MS = 1000;
 const POLL_INTERVAL_MS = 200;
-const NAV_POLL_INTERVAL_MS = 1000;
 
 // Only the page identity, never the query: Chess.com rewrites ?move=N on every
 // click in the move list, and treating that as navigation would tear down a
@@ -476,7 +475,6 @@ function hideChesscomBoard() {
   if (chesscomState?._refreshTimer) clearInterval(chesscomState._refreshTimer);
   releaseColumnFoot();
   document.getElementById('sfct-modal-blocker')?.remove();
-  document.getElementById('sfct-result')?.remove();
   // Dropping this un-hides Chess.com's own pieces again.
   document.getElementById('sfct-board-style')?.remove();
   chesscomState?._restoreOpponentName?.();
@@ -514,20 +512,14 @@ function endGame(title, subtitle, opts) {
 
 // Give the board back to Chess.com.
 function dismissResult() {
-  const card = document.getElementById('sfct-result');
-  card?._sfctCleanup?.();
-  card?.remove();
-  hideChesscomBoard();
+  hideChesscomBoard(); // its [data-sfct] sweep closes the card, listeners first
 }
 
 function rematch() {
   const st = chesscomState;
   if (!st) return;
   const { startFen, playerSide, strengthSetting } = st;
-  const card = document.getElementById('sfct-result');
-  card?._sfctCleanup?.();
-  card?.remove();
-  hideChesscomBoard();
+  hideChesscomBoard(); // its [data-sfct] sweep closes the card, listeners first
   showChesscomBoard(startFen, playerSide === 'w' ? 'white' : 'black', strengthSetting);
 }
 
@@ -1157,11 +1149,8 @@ function cardButton(text, primary) {
 }
 
 // The dark card Chess.com announces things with: heading, subtitle, then a
-// column of buttons. Both the result and the "who is to move?" question are
-// this shape, so it is built once.
-function makeCard(id, title, subtitle) {
-  const old = document.getElementById(id);
-  if (old) { old._sfctCleanup?.(); old.remove(); } // never orphan its listeners
+// column of buttons. Only built when there was no modal of theirs to clone.
+function makeCard(title, subtitle) {
   ensureAnimStyle();
 
   // Their announcement modal, built out of their own class names. They are
@@ -1178,8 +1167,8 @@ function makeCard(id, title, subtitle) {
   // which stays ours - the card is centred on the board, not where their layout
   // would have put it.
   const card = document.createElement('div');
-  card.id = id;
-  card.setAttribute('data-sfct', 'card');
+  card.id = 'sfct-result';
+  card.setAttribute('data-sfct', 'result');
   card.className = 'game-over-modal-shell-container';
   Object.assign(card.style, {
     position: 'fixed', zIndex: '999998', maxWidth: '92vw',
@@ -1221,59 +1210,9 @@ function makeCard(id, title, subtitle) {
   return { card, body, content };
 }
 
-// Asked, not assumed: once the card is on the page, does it actually LOOK like
-// anything? Their stylesheet may not be there at all, and class names move -
-// this extension has watched game-result-component lose its suffix and
-// result-text become result-row. Without this the card would be a stack of
-// transparent divs, which is worse than the plain dark box it used to be.
-//
-// Only ever reached when their rules did not land: inline styles outrank class
-// rules, so there is no way for this to fight styling that did.
-const CARD_FALLBACK_BG = '#262421';
-const CARD_FALLBACK_HEAD_BG = '#302e2c';
-
-function dressCardIfUnstyled(card) {
-  // A cloned card of theirs is already dressed, and has none of the markers this
-  // works by. Painting it would be repainting Chess.com.
-  if (!card.querySelector('[data-sfct="card-body"]')) return false;
-  const content = card.firstElementChild;
-  const bg = content && getComputedStyle(content).backgroundColor;
-  if (bg && !/rgba\(0, 0, 0, 0\)|transparent/.test(bg)) return false;
-
-  Object.assign(card.style, {
-    width: 'min(330px,80vw)', color: '#fff',
-    fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
-  });
-  Object.assign(content.style, {
-    display: 'block', background: CARD_FALLBACK_BG, borderRadius: '12px',
-    overflow: 'hidden', boxShadow: '0 12px 40px rgba(0,0,0,.6)',
-  });
-  // Addressed by marker, never by position: the card gained a note under the
-  // button row, and "the last child" quietly became that note.
-  const at = (name) => card.querySelector('[data-sfct="' + name + '"]');
-  Object.assign(at('card-head').style, { background: CARD_FALLBACK_HEAD_BG, padding: '18px 20px', textAlign: 'center' });
-  Object.assign(at('card-title').style, { fontSize: '22px', fontWeight: '700', lineHeight: '1.2' });
-  Object.assign(at('card-subtitle').style, { fontSize: '13px', opacity: '.6', marginTop: '4px' });
-  Object.assign(at('card-buttons').style, {
-    padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: '8px',
-  });
-  for (const b of card.querySelectorAll('button')) {
-    const primary = b.dataset.sfctPrimary === '1';
-    Object.assign(b.style, {
-      minHeight: '44px', border: 'none', borderRadius: '8px',
-      fontSize: '15px', fontWeight: '700',
-      background: primary ? '#81b64c' : 'rgba(255,255,255,.09)',
-      color: primary ? '#fff' : 'rgba(255,255,255,.85)',
-      boxShadow: primary ? 'inset 0 -3px 0 rgba(0,0,0,.18)' : 'none',
-    });
-  }
-  return true;
-}
-
 // Put a card on screen, centred on the board and staying there.
 function showCard(card) {
   document.body.appendChild(card);
-  dressCardIfUnstyled(card);
   centreOnBoard(card);
   const reposition = () => centreOnBoard(card);
   window.addEventListener('resize', reposition);
@@ -1283,8 +1222,6 @@ function showCard(card) {
     window.removeEventListener('scroll', reposition);
   };
 }
-
-function closeCard(card) { card._sfctCleanup?.(); card.remove(); }
 
 // ── Their result card, borrowed ──────────────────────────────────────────────
 // Dressing our own box in their class names got close and stayed wrong, because
@@ -1384,14 +1321,15 @@ function cloneResultCard(title, subtitle, opts) {
 }
 
 function showResultModal(title, subtitle, opts) {
-  document.getElementById('sfct-result')?.remove();
+  const old = document.getElementById('sfct-result');
+  old?._sfctCleanup?.(); // never orphan its resize/scroll listeners
+  old?.remove();
   const theirs = cloneResultCard(title, subtitle, opts);
   if (theirs) { showCard(theirs); return; }
 
   // No modal was on the page to copy - a finished game reopened later, where
   // theirs was dismissed long ago. The hand-built card stands in.
-  const { card, body, content } = makeCard('sfct-result', title, subtitle || '');
-  card.setAttribute('data-sfct', 'result');
+  const { card, body, content } = makeCard(title, subtitle || '');
   const replayable = opts?.rematch !== false;
   if (replayable) {
     const again = cardButton('Play again vs Stockfish', true);
@@ -1420,10 +1358,8 @@ function showResultModal(title, subtitle, opts) {
 }
 
 // ── Inject the "Continue vs Computer" button ─────────────────────────────────
-// The button must appear even when Chess.com renames its game-over modal classes.
-// Strategy: try a native, in-modal placement that matches Chess.com's styling; if
-// the known anchor is gone, append into the modal; if no modal container is found
-// at all, fall back to a floating fixed-position button so it ALWAYS shows.
+// Docked under their result card, or at the foot of the move-list column when
+// there is none. With neither on the page it is not offered at all.
 
 function onContinueClick(e) {
   e.preventDefault(); e.stopPropagation();
@@ -1616,7 +1552,15 @@ function removeTrigger() {
 }
 
 function tryInject() {
-  if (!extensionAlive()) { clearInterval(pollTimer); clearInterval(navTimer); return; }
+  if (!extensionAlive()) { clearInterval(pollTimer); return; }
+  // SPA navigation: Chess.com swaps pages without a reload. Checked here, on the
+  // same tick, rather than on a timer of its own.
+  const now = pageKey();
+  if (now !== lastPage) {
+    lastPage = now;
+    removeTrigger();
+    hideChesscomBoard();
+  }
   // While playing, the game-over modal is only CSS-hidden, so isGameOver() stays
   // true — without this guard the trigger button reappears over the live board.
   if (chesscomState) return;
@@ -1642,16 +1586,6 @@ function tryInject() {
 // at most 200 ms of extra latency on a modal that the user is reading anyway.
 const pollTimer = setInterval(tryInject, POLL_INTERVAL_MS);
 
-// SPA navigation: Chess.com swaps pages without a reload.
-const navTimer = setInterval(() => {
-  const now = pageKey();
-  if (now === lastPage) return;
-  lastPage = now;
-  removeTrigger();
-  hideChesscomBoard();
-  tryInject();
-}, NAV_POLL_INTERVAL_MS);
-
 // React to the popup on/off toggle while a tab is open.
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !changes.active) return;
@@ -1665,6 +1599,5 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 window.addEventListener('pagehide', () => {
   clearInterval(pollTimer);
-  clearInterval(navTimer);
   hideChesscomBoard();
 });

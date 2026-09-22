@@ -179,7 +179,7 @@ the question before it is asked.
 ## Firefox / AMO: what differs
 
 - Upload the **firefox** zip, not the chrome one. `npm run package` builds both;
-  the Firefox one has `manifest-firefox.json` renamed to `manifest.json` inside it.
+  the Firefox one carries the manifest `scripts/firefox-manifest.py` derives.
 - AMO requires a **source-code submission** because the vendored engine loader is minified.
   The build instructions are in [`../docs/AMO-SOURCE-SUBMISSION.md`](../docs/AMO-SOURCE-SUBMISSION.md);
   paste that file's "Notes for the reviewer" section into the source-upload form.

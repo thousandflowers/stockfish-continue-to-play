@@ -14,7 +14,7 @@ bash scripts/download-stockfish.sh   # fetch the engine (~7 MB, git-ignored)
 Load it unpacked:
 
 - **Chrome:** `chrome://extensions` → Developer mode → Load unpacked → pick the folder.
-- **Firefox:** `cp manifest-firefox.json manifest.json`, then `about:debugging#/runtime/this-firefox` → Load Temporary Add-on.
+- **Firefox:** `npm run package`, then `about:debugging#/runtime/this-firefox` → Load Temporary Add-on → pick the firefox zip.
 
 After editing files, hit the reload icon on the extension card and refresh the Chess.com tab.
 
@@ -50,7 +50,7 @@ npm run package     # builds stockfish-continue-to-play-{chrome,firefox}-<versio
 
 `scripts/package.sh` lists every packaged path explicitly - never run `zip -r` from the
 repo root, it would ship `node_modules/` and `.git/`. It re-verifies the engine checksum
-first, renames `manifest-firefox.json` to `manifest.json` inside the Firefox zip, and
+first, writes the Firefox zip's `manifest.json` from `scripts/firefox-manifest.py`, and
 includes the GPLv3 notices (`LICENSE`, `LICENSE.stockfish`, `LICENSE.MIT`).
 
 `npm run test:e2e` loads the unpacked extension into a real Chromium, serves a fake

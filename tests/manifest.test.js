@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
 const read = f => JSON.parse(readFileSync(path.join(root, f), 'utf8'));
 const chrome = read('manifest.json');
-const firefox = read('manifest-firefox.json');
+// Derived at package time, so the test reads what package.sh would ship.
+const firefox = JSON.parse(execFileSync('python3', [path.join(root, 'scripts/firefox-manifest.py')], { encoding: 'utf8' }));
 const pkg = read('package.json');
 const content = readFileSync(path.join(root, 'content_chesscom.js'), 'utf8');
 
@@ -14,7 +16,6 @@ describe('manifests', () => {
     // package.sh names the zips from manifest.json; a mismatch ships a file
     // whose name lies about its contents.
     expect(chrome.version).toBe(pkg.version);
-    expect(firefox.version).toBe(pkg.version);
   });
 
   // Continuing from any position in the move list reads the page harder than
@@ -85,14 +86,5 @@ describe('manifests', () => {
   it('declares data collection for Firefox, which AMO now requires', () => {
     expect(firefox.browser_specific_settings.gecko.data_collection_permissions)
       .toEqual({ required: ['none'] });
-  });
-
-  it('keeps the two manifests identical apart from the known divergences', () => {
-    const strip = m => {
-      const c = structuredClone(m);
-      delete c.background; delete c.browser_specific_settings;
-      return c;
-    };
-    expect(strip(firefox)).toEqual(strip(chrome));
   });
 });

@@ -16,7 +16,6 @@
 // accident — the page world has no access to chrome.*, so it holds no
 // permissions of its own.
 (() => {
-  const CHANNEL = 'sfct-page-state';
   const POLL_MS = 400;
 
   const board = () => document.querySelector('wc-chess-board, chess-board');
@@ -42,26 +41,12 @@
     // page-scraping path can only estimate.
     const fen = read(game, 'getFEN');
     if (typeof fen !== 'string' || fen.split(' ').length < 4) return null;
-    const check = read(game, 'isCheck');
+    // Only what the content script reads. getTurn, getMode, getPositionInfo,
+    // isCheck and getResult were measured too: ARCHITECTURE.md has what they
+    // say, and which of their names mislead.
     return {
       fen,
-      // Their own constants, read off getJCEGameCopy(): WHITE 1, BLACK 2.
-      turn: read(game, 'getTurn') ?? null,
       playingAs: read(game, 'getPlayingAs') ?? null,
-      mode: (read(game, 'getMode') || {}).name ?? null,
-      // Per-node truth about the position on the board: checkmate, stalemate,
-      // draw, threefold, insufficient and fiftyMoveRule all follow the move you
-      // are looking at.
-      //
-      // ONE FIELD IN HERE DOES NOT, and it is the one whose name invites the
-      // mistake: info.gameOver was true at EVERY node of a finished game, move
-      // 10 of 45 included. It says this GAME ended, never this POSITION is
-      // terminal. Their object is published as they built it, misleading key
-      // and all, because reshaping it would only move the lie somewhere else.
-      info: json(read(game, 'getPositionInfo')),
-      // isCheck() answers with a SQUARE ("f8"), not a boolean. The boolean is
-      // info.check. The name here says which one this is.
-      checkSquare: typeof check === 'string' ? check : null,
       // The board theme's own highlight, stated by them rather than sampled off a
       // square that may not be on the board at the moment we look:
       // themeAssets.board.config.highlightSquareHex is "#10983d" on a green
@@ -79,7 +64,6 @@
       // Both ratings, named outright - no working out which row on the page
       // belongs to the opponent.
       headers: json(read(game, 'getHeaders')),
-      result: json(read(game, 'getResult')),
     };
   }
 

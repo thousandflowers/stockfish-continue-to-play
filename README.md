@@ -89,9 +89,9 @@ bash scripts/download-stockfish.sh
 # 3a. Chrome / Edge / Brave / Arc / Opera
 #     chrome://extensions → enable "Developer mode" → "Load unpacked" → pick this folder
 
-# 3b. Firefox 128+ uses a separate manifest - swap it in first
-#     cp manifest-firefox.json manifest.json
-#     about:debugging#/runtime/this-firefox → "Load Temporary Add-on" → pick manifest.json
+# 3b. Firefox 128+ needs its own manifest, which the build derives
+#     npm run package
+#     about:debugging#/runtime/this-firefox → "Load Temporary Add-on" → pick stockfish-continue-to-play-firefox-*.zip
 ```
 
 > The engine - `stockfish.js` (21 KB loader) and `stockfish.wasm` (7 MB) - is excluded
