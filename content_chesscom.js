@@ -683,7 +683,13 @@ function attachPointerHandlers() {
     const r = b.getBoundingClientRect();
     return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
   };
+  // Only the primary button is ours. Right-click is how Chess.com draws arrows
+  // and colours squares, and capturing every button ate those before their
+  // board ever saw them — the annotation tools simply stopped existing while a
+  // continuation was on.
+  const notOurs = (e) => e.button !== undefined && e.button !== 0;
   const onDown = (e) => {
+    if (notOurs(e)) return;
     if (e.target?.closest?.('#sfct-badge, #sfctplay-banner, #sfctplay-btn, #sfct-result, #sfct-ask')) return;
     if (e.target?.closest?.('[data-sfct="promo"]')) return; // the picker handles its own clicks
     if (cancelPromotion()) { e.preventDefault(); e.stopPropagation(); return; }
@@ -695,6 +701,7 @@ function attachPointerHandlers() {
     e.preventDefault(); e.stopPropagation();
   };
   const onUp = (e) => {
+    if (notOurs(e)) return;
     if (!dragStart) return;
     const b = currentBoard();
     if (!b || !inside(b, e)) { dragStart = null; return; }
@@ -774,8 +781,12 @@ function askPromotion(to, side, onPick) {
     cell.className = `piece ${side}${p}`;
     cell.style.cssText = 'position:relative;width:100%;height:25%;left:auto;top:auto;' +
       'transform:none;background-size:100% 100%;cursor:pointer';
-    cell.onmouseenter = () => { cell.style.background = 'rgba(0,0,0,.08)'; };
-    cell.onmouseleave = () => { cell.style.background = ''; };
+    // backgroundColor, never the `background` shorthand: the shorthand resets
+    // background-image too, and the piece these cells show comes from Chess.com's
+    // sprite through the `piece` class — so hovering one made the piece you were
+    // about to choose disappear.
+    cell.onmouseenter = () => { cell.style.backgroundColor = 'rgba(0,0,0,.08)'; };
+    cell.onmouseleave = () => { cell.style.backgroundColor = ''; };
     cell.onclick = (e) => { e.preventDefault(); e.stopPropagation(); col.remove(); onPick(p); };
     col.appendChild(cell);
   }

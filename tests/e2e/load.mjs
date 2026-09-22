@@ -321,6 +321,18 @@ await page.locator('[data-sfct="promo"]').waitFor({ timeout: 5000 }).catch(async
     promoBox: (() => { const e = document.querySelector('[data-sfct="promo"]');
       if (!e) return null; const r = e.getBoundingClientRect(); return { w: r.width, h: r.height }; })(),
   })))));
+// Hovering a choice tints it. Using the `background` shorthand for that also
+// resets background-image, and the piece on these cells is Chess.com's sprite
+// arriving through the `piece` class - so the piece you were about to pick
+// disappeared under the cursor.
+await page.locator('[data-sfct="promo"] > div').nth(1).hover();
+await page.waitForTimeout(250);
+const hovered = await page.locator('[data-sfct="promo"] > div').nth(1)
+  .evaluate(el => ({ img: el.style.backgroundImage, colour: el.style.backgroundColor }));
+if (hovered.img) fail('hovering wiped the sprite off the choice: background-image is now ' + hovered.img);
+if (!hovered.colour) fail('hovering did not tint the choice at all');
+console.log('PASS 15b: hovering a promotion choice tints it without erasing the piece');
+
 const offered = await page.$$eval('[data-sfct="promo"] > div', els =>
   els.map(e => (e.className.match(/\bw([qnrb])\b/) || [])[1]));
 if (offered.join('') !== 'qnrb') fail('promotion picker offered: ' + offered.join(','));
@@ -661,18 +673,37 @@ if (!(sel.markAt < sel.pieceAt))
   fail(`the marker is painted over the piece (marker at ${sel.markAt}, piece at ${sel.pieceAt})`);
 if (parseFloat(sel.opacity) >= 1) fail('the marker is opaque, so it hides what it marks');
 console.log(`PASS 22b: picked-up piece still shown, marker under it at ${sel.markAt} and translucent (${sel.opacity})`);
+
+// Right-click is Chess.com's own annotation tool - arrows and coloured
+// squares. Our pointer handlers run on the body in the CAPTURE phase, so
+// preventing every button ate those before their board ever saw them.
+await page.evaluate(() => {
+  window.__rc = null;
+  document.getElementById('board').addEventListener('pointerdown', (e) => {
+    if (e.button === 2) window.__rc = { reached: true, prevented: e.defaultPrevented };
+  });
+});
+await page.mouse.click(nsq(4, 4).x, nsq(4, 4).y, { button: 'right' });
+await page.waitForTimeout(400);
+const rc = await page.evaluate(() => window.__rc);
+if (!rc || !rc.reached) fail('a right-click never reached their board: ' + JSON.stringify(rc));
+if (rc.prevented) fail('a right-click reached their board already prevented - no arrows, no square colours');
+// …and it must not have been mistaken for a move.
+const afterRight = await page.evaluate(() => window.__log.moves.length);
+if (afterRight !== 0) fail('a right-click was taken for a move: ' + afterRight);
+console.log('PASS 22c: right-click reaches their board unprevented, and is not taken for a move');
 await page.mouse.click(nsq(5, 4).x, nsq(5, 4).y); await page.waitForTimeout(1500);
 const played = await page.evaluate(() => window.__log.moves);
 if (!played.some(m => m.from === 'e2' && m.to === 'e4'))
   fail('the move never reached their board: ' + JSON.stringify(played));
-console.log('PASS 22c: the move went to their board -', JSON.stringify(played[0]));
+console.log('PASS 22d: the move went to their board -', JSON.stringify(played[0]));
 
 // …and stopping hands the real game back.
 await page.locator('#sfct-badge').click();
 await page.waitForTimeout(800);
 const reset = await page.evaluate(() => window.__log.reset);
 if (!reset) fail('resetToMainLine was never called - the variation would be left on the game');
-console.log('PASS 22d: stopping dropped the variation and restored the main line');
+console.log('PASS 22e: stopping dropped the variation and restored the main line');
 
 
 console.log('\nALL CHECKS PASSED');
