@@ -302,6 +302,98 @@ describe('isGameOver', () => {
   });
 });
 
+// ── opponentTextSlot: the one node whose text we may rewrite ────────────────
+describe('opponentTextSlot', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  const rows = (top, bottom) =>
+    `<div class="player-row-component player-row-top">${top}</div>` +
+    `<div class="player-row-component player-row-bottom">${bottom}<span class="user-tagline-you">You</span></div>`;
+
+  it('finds the opponent name node', () => {
+    document.body.innerHTML = rows('<span class="user-username">poohineedyou</span>', '<span class="user-username">me</span>');
+    const el = d.opponentTextSlot();
+    expect(el?.textContent).toBe('poohineedyou');
+  });
+
+  // Writing textContent on a node that has ELEMENT children deletes those
+  // children. Chess.com renders these rows with Vue, and its next patch then
+  // throws "insertBefore … not a child of this node" and takes the board down
+  // with it. That crash has already been paid for once, on 2026-09-22.
+  it('refuses a node that owns element children', () => {
+    document.body.innerHTML = rows(
+      '<div class="user-tagline-component"><span class="flag"></span><span>poohineedyou</span></div>',
+      '<span class="user-username">me</span>');
+    const el = d.opponentTextSlot();
+    expect(el && el.children.length).toBe(0);
+    expect(el?.textContent).toBe('poohineedyou');
+  });
+
+  it('returns null rather than guess when no leaf carries a name', () => {
+    document.body.innerHTML = rows('<div class="user-tagline-component"><img src="x"><span class="flag"></span></div>', '<span class="user-username">me</span>');
+    expect(d.opponentTextSlot()).toBe(null);
+  });
+
+  // The shape that actually shipped broken: their rating span carries the
+  // tagline class too, and sits after the username.
+  it('is not fooled by a rating span that also matches the tagline pattern', () => {
+    document.body.innerHTML = rows(
+      '<span class="user-username">poohineedyou</span><span class="user-tagline-rating">2997</span>',
+      '<span class="user-username">me</span>');
+    expect(d.opponentTextSlot()?.textContent).toBe('poohineedyou');
+  });
+
+  it('returns null when there is no player row at all', () => {
+    document.body.innerHTML = '<div class="nothing"></div>';
+    expect(d.opponentTextSlot()).toBe(null);
+  });
+});
+
+describe('opponentRatingSlot', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+  it('finds the opponent rating, not the player one', () => {
+    document.body.innerHTML =
+      '<div class="player-row-component player-row-top"><span class="user-username">them</span><span class="rating">(2997)</span></div>' +
+      '<div class="player-row-component player-row-bottom"><span class="user-tagline-you">You</span><span class="rating">(1400)</span></div>';
+    expect(d.opponentRatingSlot()?.textContent).toBe('(2997)');
+  });
+  it('returns null when the row shows no rating', () => {
+    document.body.innerHTML =
+      '<div class="player-row-component player-row-top"><span class="user-username">them</span></div>' +
+      '<div class="player-row-component player-row-bottom"><span class="user-tagline-you">You</span></div>';
+    expect(d.opponentRatingSlot()).toBe(null);
+  });
+});
+
+// ── ours: finding our own nodes after Chess.com has moved them ───────────────
+describe('ours', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+
+  it('finds a marker that is a direct child, as before', () => {
+    document.body.innerHTML = '<div id="b"><div data-sfct="dot"></div></div>';
+    expect(d.ours(document.getElementById('b'), 'dot').length).toBe(1);
+  });
+
+  // The bug this exists for: nothing of ours ever reparents itself, but a
+  // Chess.com re-render that rebuilds its own child list carries our appended
+  // siblings down a level with it. `:scope >` then stops seeing them, so the
+  // line that removes them never can either - a yellow square and a set of dots
+  // that outlive the move that made them, for the rest of the game.
+  it('finds a marker Chess.com has nested one level deeper', () => {
+    document.body.innerHTML = '<div id="b"><div class="theirs"><div data-sfct="dot"></div></div></div>';
+    expect(d.ours(document.getElementById('b'), 'dot').length).toBe(1);
+  });
+
+  it('matches the kind exactly, never a longer name', () => {
+    document.body.innerHTML = '<div id="b"><div data-sfct="promo-piece"></div><div data-sfct="piece"></div></div>';
+    expect(d.ours(document.getElementById('b'), 'piece').length).toBe(1);
+  });
+
+  it('counts nothing when there is nothing of ours', () => {
+    document.body.innerHTML = '<div id="b"><div class="piece wq square-11"></div></div>';
+    expect(d.ours(document.getElementById('b'), 'piece').length).toBe(0);
+  });
+});
+
 // ── computeSquareFromClick ───────────────────────────────────────────────────
 describe('computeSquareFromClick', () => {
   const board = (flipped) => {

@@ -53,7 +53,8 @@
     {
       "resources": [
         "stockfish.js",
-        "stockfish.wasm"
+        "stockfish.wasm",
+        "icons/icon128.png"
       ],
       "matches": [
         "*://*.chess.com/*"

@@ -87,6 +87,49 @@ When the bridge is absent — an older Chess.com, a browser where `world: "MAIN"
 take — every consumer falls back to the page-scraping path below, which is exactly what
 shipped before it. The bridge can only add.
 
+## Where this extension speaks
+
+Nowhere of its own. There is no status pill and no banner: a continuation renames
+Chess.com's own opponent row - name, rating and avatar - and that is the whole of
+it. Esc gives the finished game back.
+
+Only the **text of leaf nodes** they own and the `src` of their avatar image are
+written. Never an inserted node, and never a class, which Vue diffs away and
+fights over. `opponentTextSlot()` enforces the leaf rule and returns null rather
+than pick something risky, because writing `textContent` on a node that owns
+element children DELETES those children - which hands Vue the same
+`insertBefore … not a child of this node` that took the board down on
+2026-09-22, by another door. A rating-shaped leaf is refused too: their
+`user-tagline-rating` matches the tagline pattern and sits after the username, so
+ordering alone once put the engine's name into the rating box.
+
+Their row redraws on every clock tick and takes our text with it. It is written
+again on the one-second watchdog that already runs - no observer, no second
+timer, and never a string we wrote ourselves mistaken for theirs.
+
+The phase (`loading` / `thinking` / `your-move` / `over`) lives on `<html>` as
+`data-sfct-phase`, where a test can wait for it and nobody can see it. It is
+derived from the game's own state, never from the words on screen, so the two
+cannot drift apart.
+
+## Picking a piece up
+
+The press and the release were both read, and nothing in between: there was no
+`pointermove` handler in the extension at all, so a piece only moved once its
+move had been committed. It now carries a pixel offset on top of the percentage
+transform its square gave it, which keeps the square it belongs to and lets the
+release simply drop the offset. Under four pixels of travel it is still a click,
+so select-then-click keeps working. The piece transition is switched off while a
+piece is carried - that transition is what makes a played move slide, and it is
+exactly what made a dragged piece lag behind the cursor.
+
+Their own `div.hover-square` was going to be reused for the destination square
+and is not, for a measured reason: mid-drag on a live board it paints NOTHING -
+`visibility` goes to visible and that is all, with a transparent background and
+no border or shadow. The ring under their dragged piece is drawn by their WebGL
+renderer; that node is a hit area, and it moves in pixels where everything here
+moves in percentages.
+
 ## The cards this extension puts up
 
 The result card and the "who is to move?" question are built out of Chess.com's

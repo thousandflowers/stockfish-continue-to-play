@@ -29,7 +29,6 @@ const ENGINE_INIT_TIMEOUT_MS = 15000;
 const REFRESH_INTERVAL_MS = 1000;
 const POLL_INTERVAL_MS = 200;
 const NAV_POLL_INTERVAL_MS = 1000;
-const BANNER_TIMEOUT_MS = 15000;
 
 // Only the page identity, never the query: Chess.com rewrites ?move=N on every
 // click in the move list, and treating that as navigation would tear down a
@@ -300,7 +299,12 @@ function injectBoardStyle() {
     // Chess.com's own pieces are hidden, never removed: dropping this style tag on
     // stop hands the board straight back instead of leaving it blank.
     'wc-chess-board [class*="piece"]:not([data-sfct]),chess-board [class*="piece"]:not([data-sfct]){display:none!important}',
-    '[data-sfct="piece"]{transition:transform var(--move-animation-duration,180ms) ease-out}',
+    '[data-sfct="piece"]{transition:transform var(--move-animation-duration,180ms) ease-out;cursor:grab}',
+    // A piece under the finger must not be animated towards where it already is:
+    // the transition that makes a played move slide is exactly what makes a
+    // dragged piece lag behind the cursor. It is also the only moment the hand
+    // should close.
+    '[data-sfct="piece"][data-sfct-drag]{transition:none;cursor:grabbing;z-index:9}',
     // Their end-of-game artwork sits on the board as its own children, not as
     // pieces, so hiding their pieces left it painted over OUR game for the whole
     // of it - the halves on both kings after a draw being the one you cannot
@@ -347,13 +351,40 @@ function engineStrength(setting, playerSide) {
 
 // Rename the opponent on the board so it is obvious who you are now playing.
 // Returns a function that puts the original name back.
-function labelOpponentAsEngine(text) {
-  const row = opponentRow();
-  const el = row?.querySelector('[class*="username"], [class*="tagline"], [class*="name"]');
-  if (!el) return null;
-  const original = el.textContent;
-  el.textContent = text;
-  return () => { try { el.textContent = original; } catch (_) {} };
+// A real opponent lives in Chess.com's player row, so this one lives there too:
+// name, rating and face, all three saying the same thing.
+//
+// Only the TEXT of leaf nodes they own and the `src` of their avatar image are
+// touched. Never an inserted node - that is what took the board down on
+// 2026-09-22 - and never a class, which Vue diffs away and fights us over.
+// opponentTextSlot() refuses any node with element children, because writing
+// textContent on one of those deletes those children and hands Vue the same
+// crash by another door.
+function labelOpponentAsEngine(label, rating) {
+  const undo = [];
+  const write = (el, text) => {
+    if (!el) return false;
+    const was = el.textContent;
+    el.textContent = text;
+    undo.push(() => { el.textContent = was; });
+    return true;
+  };
+  write(opponentTextSlot(), label);
+  // Their row keeps the rating in its own box, so the name must not carry it too
+  // - "Stockfish (1450)(1450)" is nobody's opponent. When there is no rating box
+  //   to write, the name carries it instead, and engineLine() decides which.
+  const ratingShown = !!rating && write(opponentRatingSlot(), `(${rating})`);
+  if (chesscomState) chesscomState._ratingShown = ratingShown;
+
+  const img = opponentRow()?.querySelector('img[class*="avatar"], [class*="avatar"] img');
+  if (img) {
+    const was = img.getAttribute('src');
+    try {
+      img.src = chrome.runtime.getURL('icons/icon128.png');
+      undo.push(() => { if (was) img.setAttribute('src', was); });
+    } catch (_) { /* no icon to serve: their face stays, which is only cosmetic */ }
+  }
+  return undo.length ? () => undo.forEach(f => { try { f(); } catch (_) {} }) : null;
 }
 
 function showChesscomBoard(fen, color, strengthSetting) {
@@ -369,7 +400,7 @@ function showChesscomBoard(fen, color, strengthSetting) {
 
     const session = ++sessionId;
     const board = findActiveBoard();
-    if (!board) { showBanner('Board not found.'); return; }
+    if (!board) { showNotice('Board not found.'); return; }
     board.style.touchAction = 'none';
 
     chesscomState = {
@@ -393,13 +424,12 @@ function showChesscomBoard(fen, color, strengthSetting) {
     injectBoardStyle();
     syncBoardToState();
     attachPointerHandlers();
+    attachKeyHandler();
     startRefreshTimer();
-    chesscomState._restoreOpponentName = labelOpponentAsEngine(`Stockfish (${strength.label})`);
-    showStatusBadge(`Stockfish ${strength.label} · loading engine…`);
-    // Say plainly that a new game has started — the board looks the same as the
-    // one that just ended, so without this it is not obvious anything changed.
-    showBanner(`♟ New game vs Stockfish (${strength.label}) - you play ` +
-               (playerSide === 'w' ? 'White' : 'Black'), 6000);
+    chesscomState.engineLabel = strength.label;
+    chesscomState._restoreOpponentName = labelOpponentAsEngine('Stockfish', strength.label);
+    chesscomState._nameSlot = opponentTextSlot();
+    updateStatus('');
 
     initEngine().then(() => {
       if (session !== sessionId || !chesscomState) return; // stopped or restarted while loading
@@ -415,20 +445,37 @@ function showChesscomBoard(fen, color, strengthSetting) {
       warn('engine init failed', e);
       if (session !== sessionId) return; // belongs to a game the user already stopped
       hideChesscomBoard();
-      showBanner('Engine failed to load.');
+      showNotice('Engine failed to load.');
     });
   } catch (e) {
     warn('showChesscomBoard error', e);
-    showBanner('Error: ' + (e?.message || e));
+    showNotice('Error: ' + (e?.message || e));
   }
+}
+
+// Esc gives the finished game back. It is the only way out of a continuation now
+// that the badge is gone, so it is kept apart from the pointer handlers: endGame
+// runs _ptrCleanup and nulls it, and Esc has to keep working on the result card
+// after that.
+function attachKeyHandler() {
+  const onKey = (e) => {
+    if (e.key !== 'Escape') return;
+    if (e.target?.closest?.('input,textarea,[contenteditable]')) return; // their chat
+    if (cancelPromotion()) { e.preventDefault(); e.stopPropagation(); return; }
+    if (!chesscomState) return;           // nothing of ours is up: their Esc is theirs
+    e.preventDefault(); e.stopPropagation();
+    dismissResult();
+  };
+  document.addEventListener('keydown', onKey, { capture: true });
+  chesscomState._keyCleanup = () => document.removeEventListener('keydown', onKey, { capture: true });
 }
 
 function hideChesscomBoard() {
   if (chesscomState?._ptrCleanup) chesscomState._ptrCleanup();
+  if (chesscomState?._keyCleanup) chesscomState._keyCleanup();
   if (chesscomState?._refreshTimer) clearInterval(chesscomState._refreshTimer);
   releaseColumnFoot();
   document.getElementById('sfct-modal-blocker')?.remove();
-  document.getElementById('sfct-badge')?.remove();
   document.getElementById('sfct-result')?.remove();
   // Dropping this un-hides Chess.com's own pieces again.
   document.getElementById('sfct-board-style')?.remove();
@@ -443,6 +490,7 @@ function hideChesscomBoard() {
   _perftMoves = null;
   _legalMoves = null;
   chesscomState = null;
+  publishPhase(); // the phase is a fact about a game that no longer exists
 }
 
 // End of game. The final position STAYS on the board — a game that just ended
@@ -513,7 +561,7 @@ const RING_RATIO = 7.5 / 86;
 const HIGHLIGHT_OPACITY = '.5';
 
 function highlightPaint(board) {
-  const theirs = board.querySelector(':scope > .highlight:not([data-sfct])');
+  const theirs = board.querySelector('.highlight:not([data-sfct])');
   if (!theirs) return 'opacity:' + HIGHLIGHT_OPACITY;
   const s = getComputedStyle(theirs);
   return 'background-color:' + s.backgroundColor + ';opacity:' + (s.opacity || HIGHLIGHT_OPACITY);
@@ -543,6 +591,24 @@ function syncBoardToState() {
   try {
     const st = chesscomState;
     const { board, boardData, selectedSq } = st;
+
+    // Cleared FIRST, before a single line below can throw. This function has one
+    // try/finally and no catch, and it is the only place in the file that removes
+    // these: an exception halfway down used to skip the removal and leave the
+    // selected square and its dots up for the rest of the game.
+    //
+    // Cleared across the document rather than under this board, because the board
+    // can be swapped out from under us - by the refresh watchdog, or by
+    // currentBoard() - and nothing ever looks at the old node again.
+    document.querySelectorAll('[data-sfct="sel"],[data-sfct="dot"]').forEach(el => el.remove());
+
+    // And anything of ours still standing on a board we have stopped drawing on.
+    // currentBoard() and the refresh watchdog both reassign chesscomState.board
+    // when Chess.com replaces the node, and neither ever looks at the old one
+    // again - so its pieces stay on screen while a fresh set is painted here.
+    document.querySelectorAll('[data-sfct="piece"],[data-sfct="check"]')
+      .forEach(el => { if (!board.contains(el)) el.remove(); });
+
     const flipped = isFlipped(board);
     const dests = (selectedSq && _legalMoves) ? legalDestsFrom(_legalMoves, selectedSq) : null;
 
@@ -558,7 +624,7 @@ function syncBoardToState() {
     };
 
     const nodes = new Map();
-    board.querySelectorAll(':scope > [data-sfct="piece"]').forEach(el => nodes.set(el.dataset.sq, el));
+    ours(board, 'piece').forEach(el => nodes.set(el.dataset.sq, el));
 
     if (st._flipped !== flipped) { // the user flipped the board — everything moves
       st._flipped = flipped;
@@ -589,7 +655,7 @@ function syncBoardToState() {
     // it replayed on every re-render — picking a piece up made the king twitch.
     // It only plays when the check first appears, or moves to another king.
     const checkedKing = isKingAttacked(boardData, st.sideToMove) && kingSquare(boardData, st.sideToMove);
-    let mark = board.querySelector(':scope > [data-sfct="check"]');
+    let mark = ours(board, 'check')[0] || null;
     if (!checkedKing) {
       mark?.remove();
     } else {
@@ -622,7 +688,6 @@ function syncBoardToState() {
     // at a1 instead of just leaving them unpainted — and the percentages in
     // place() resolve against the element's own size, so it has to have one.
     // The values are theirs, so nothing here fights their rule.
-    board.querySelectorAll(':scope > [data-sfct="sel"], :scope > [data-sfct="dot"]').forEach(el => el.remove());
     if (selectedSq) {
       const sel = document.createElement('div');
       sel.setAttribute('data-sfct', 'sel');
@@ -642,12 +707,25 @@ function syncBoardToState() {
       place(dot, dest);
       board.appendChild(dot);
     }
+  } catch (e) {
+    // The markers were already cleared at the top, so a throw here leaves a
+    // board that is MISSING what it should draw - which the next sync puts back
+    // - instead of one still wearing the last move's selection. Swallowed on
+    // purpose: this runs inside every move, and letting it escape aborted the
+    // rest of the move sequence.
+    warn('syncBoardToState', e);
   } finally { _sfSyncing = false; }
 }
 
 // ── Pointer handling ─────────────────────────────────────────────────────────
+// Below this, a press is a click. Above it, the piece has been picked up.
+const DRAG_THRESHOLD_PX = 4;
+
 function attachPointerHandlers() {
   let dragStart = null;
+  // The piece being carried, where the finger first touched it, and whether it
+  // has travelled far enough to count as carried at all.
+  let dragEl = null, dragFrom = null, dragMoved = false;
   const currentBoard = () => {
     if (!chesscomState) return null;
     const b = chesscomState.board;
@@ -661,7 +739,7 @@ function attachPointerHandlers() {
     return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
   };
   const onDown = (e) => {
-    if (e.target?.closest?.('#sfct-badge, #sfctplay-banner, #sfctplay-btn, #sfct-result, #sfct-ask')) return;
+    if (e.target?.closest?.('#sfctplay-btn, #sfct-result')) return;
     if (e.target?.closest?.('[data-sfct="promo"]')) return; // the picker handles its own clicks
     if (cancelPromotion()) { e.preventDefault(); e.stopPropagation(); return; }
     const b = currentBoard();
@@ -669,25 +747,75 @@ function attachPointerHandlers() {
     const sq = computeSquareFromClick(b, e.clientX, e.clientY);
     if (!sq) return;
     dragStart = sq;
+    // Pick the piece up, but only ever one of yours: lifting the engine's piece
+    // would show a move nobody is allowed to make.
+    const pc = chesscomState.boardData[sq];
+    const mine = pc && (pc === pc.toUpperCase() ? 'w' : 'b') === chesscomState.playerSide;
+    dragEl = mine ? [...ours(b, 'piece')].find(el => el.dataset.sq === sq) || null : null;
+    dragFrom = { x: e.clientX, y: e.clientY };
+    dragMoved = false;
+    if (dragEl) {
+      dragEl.dataset.sfctBase = dragEl.style.transform;
+      try { b.setPointerCapture?.(e.pointerId); } catch (_) {}
+    }
     e.preventDefault(); e.stopPropagation();
+  };
+
+  // The middle of the gesture, which did not exist: down, then nothing, then up.
+  // The piece now travels with the finger by carrying a pixel offset on top of
+  // the percentage transform place() gave it, so the square it belongs to is
+  // never forgotten and the release can simply drop the offset.
+  const onMove = (e) => {
+    if (!dragStart || !dragEl) return;
+    const dx = e.clientX - dragFrom.x, dy = e.clientY - dragFrom.y;
+    if (!dragMoved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+    if (!dragMoved) { dragMoved = true; dragEl.dataset.sfctDrag = '1'; }
+    dragEl.style.transform = `${dragEl.dataset.sfctBase} translate(${dx}px,${dy}px)`;
+    // No destination square is painted here on purpose. Chess.com's board does
+    // carry a `div.hover-square` of its own, and reusing it was the plan - but
+    // measured mid-drag on a live board it paints NOTHING: visibility goes to
+    // visible and that is all, with a transparent background, `border: none` and
+    // `box-shadow: none`. The ring you see under their dragged piece is drawn by
+    // their WebGL renderer, not by that node, which is a hit area. (It also moves
+    // in pixels, `matrix(1,0,0,1,344,344)`, where everything here moves in
+    // percentages.) The legal-move dots already say where the piece may land.
+  };
+
+  // Put the carried piece back where the board says it is. Called on release and
+  // on cancel, and it never decides anything about the move itself.
+  const dropPiece = () => {
+    if (dragEl) {
+      dragEl.style.transform = dragEl.dataset.sfctBase || dragEl.style.transform;
+      delete dragEl.dataset.sfctBase;
+      delete dragEl.dataset.sfctDrag;
+    }
+    dragEl = null; dragMoved = false;
   };
   const onUp = (e) => {
     if (!dragStart) return;
     const b = currentBoard();
-    if (!b || !inside(b, e)) { dragStart = null; return; }
+    const carried = dragMoved;
+    dropPiece();
+    if (!b || !inside(b, e)) { dragStart = null; syncBoardToState(); return; }
     const endSq = computeSquareFromClick(b, e.clientX, e.clientY);
-    if (!endSq) { dragStart = null; return; }
+    if (!endSq) { dragStart = null; syncBoardToState(); return; }
     e.preventDefault(); e.stopPropagation();
-    if (endSq === dragStart) handleSquareClick(endSq);
+    // A press that never travelled is a click, whatever square it ended on -
+    // a finger that slides three pixels off the square it started on was still
+    // pointing at that square.
+    if (!carried || endSq === dragStart) handleSquareClick(dragStart);
     else handleDragMove(dragStart, endSq);
     dragStart = null;
+    syncBoardToState(); // a refused move leaves the piece under the finger otherwise
   };
-  const onCancel = () => { dragStart = null; };
+  const onCancel = () => { dropPiece(); dragStart = null; syncBoardToState(); };
   document.body.addEventListener('pointerdown', onDown, { capture: true });
+  document.body.addEventListener('pointermove', onMove, { capture: true });
   document.body.addEventListener('pointerup', onUp, { capture: true });
   document.body.addEventListener('pointercancel', onCancel, { capture: true });
   chesscomState._ptrCleanup = () => {
     document.body.removeEventListener('pointerdown', onDown, { capture: true });
+    document.body.removeEventListener('pointermove', onMove, { capture: true });
     document.body.removeEventListener('pointerup', onUp, { capture: true });
     document.body.removeEventListener('pointercancel', onCancel, { capture: true });
   };
@@ -705,7 +833,14 @@ function startRefreshTimer() {
     }
     // A Chess.com re-render can wipe our overlay children without replacing the
     // board node — put them back.
-    if (!cur.querySelector(':scope > [data-sfct="piece"]')) syncBoardToState();
+    if (!ours(cur, 'piece').length) syncBoardToState();
+    // Their row redraws itself - a clock tick is enough - and takes our text with
+    // it. Written again here rather than watched for: no observer, no new timer,
+    // and never a string we wrote ourselves treated as theirs.
+    const slot = chesscomState._nameSlot;
+    if (slot && chesscomState._nameWritten && slot.textContent !== chesscomState._nameWritten) {
+      slot.textContent = chesscomState._nameWritten;
+    }
   }, REFRESH_INTERVAL_MS);
 }
 
@@ -891,65 +1026,64 @@ function onEngineMove(uci) {
   requestLegalMoves();
 }
 
-// ── Status badge & banner ────────────────────────────────────────────────────
-function showStatusBadge(text) {
-  document.getElementById('sfct-badge')?.remove();
-  document.getElementById('sfct-result')?.remove();
-  const badge = document.createElement('div');
-  badge.id = 'sfct-badge';
-  Object.assign(badge.style, {
-    position: 'fixed', top: '12px', right: '12px', zIndex: '999999',
-    background: 'rgba(0,0,0,.7)', color: '#ddd', padding: '5px 10px',
-    borderRadius: '6px', fontSize: '12px', fontFamily: '-apple-system,sans-serif',
-    backdropFilter: 'blur(4px)', cursor: 'pointer',
-  });
-  badge.title = 'Click to stop playing vs Stockfish';
-  const span = document.createElement('span');
-  span.id = 'sfct-badge-text';
-  span.textContent = '♟ ' + text;
-  badge.appendChild(span);
-  badge.onclick = dismissResult;
-  document.body.appendChild(badge);
+// ── What the opponent's row says ─────────────────────────────────────────────
+// There is no status pill and no banner any more. A real game has neither, and
+// the banner had a second sin: being `position:fixed` and ours, it swallowed the
+// first click of every continuation, because our own pointer handlers skip our
+// own UI on purpose.
+const NOTICE_MS = 6000;
+
+function engineLine(st) {
+  const label = (st?.engineLabel && !st._ratingShown) ? `Stockfish (${st.engineLabel})` : 'Stockfish';
+  return st?.status ? `${label} · ${st.status}` : label;
 }
 
 function updateStatus(text) {
-  const el = document.getElementById('sfct-badge-text');
+  const st = chesscomState;
+  publishPhase();
+  if (!st) return;
+  st.status = text || '';
+  const el = st._nameSlot;
+  if (!el) return; // their row has nothing safe to write: the game still plays
+  const line = engineLine(st);
+  if (el.textContent !== line) el.textContent = line;
+  st._nameWritten = line;
+}
+
+// The phase, on <html>, where a test can wait for it and nobody can see it.
+// Derived from the game's own state rather than from the words on screen, so the
+// two can never drift apart - and so there is something precise to wait for now
+// that the visible text says as little as a real opponent's name does.
+function publishPhase() {
+  const el = document.documentElement;
+  const st = chesscomState;
+  if (!st) { delete el.dataset.sfctPhase; return; }
+  el.dataset.sfctPhase = st.finished ? 'over'
+    : !workerReady ? 'loading'
+    : st.sideToMove === st.playerSide ? 'your-move' : 'thinking';
+}
+
+// The few things that are worth interrupting for - no board, no position, no
+// engine - say themselves in the opponent's row and then get out of the way.
+// Nothing of ours is added to the page to say them.
+function showNotice(text) {
+  warn(text);
+  const el = chesscomState?._nameSlot || opponentTextSlot();
   if (!el) return;
-  const who = chesscomState?.engineLabel ? `Stockfish ${chesscomState.engineLabel} · ` : '';
-  el.textContent = '♟ ' + who + text;
+  const was = el.textContent;
+  el.textContent = text;
+  setTimeout(() => {
+    try { if (el.textContent === text) el.textContent = chesscomState ? engineLine(chesscomState) : was; }
+    catch (_) {}
+  }, NOTICE_MS);
 }
 
 function ensureAnimStyle() {
   if (document.getElementById('sfctplay-style')) return;
   const s = document.createElement('style');
   s.id = 'sfctplay-style';
-  s.textContent = '@keyframes _sfctin{from{opacity:0;top:4px}to{opacity:1;top:16px}}' +
-    '@keyframes _sfctpop{from{opacity:0;transform:translate(-50%,-50%) scale(.92)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}';
+  s.textContent = '@keyframes _sfctpop{from{opacity:0;transform:translate(-50%,-50%) scale(.92)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}';
   document.head.appendChild(s);
-}
-
-function showBanner(text, ms) {
-  document.getElementById('sfctplay-banner')?.remove();
-  ensureAnimStyle();
-  const el = document.createElement('div');
-  el.id = 'sfctplay-banner';
-  Object.assign(el.style, {
-    position: 'fixed', top: '16px', left: '50%', transform: 'translateX(-50%)',
-    zIndex: '999999', background: '#1e2124', color: '#fff', padding: '14px 28px',
-    borderRadius: '10px', borderLeft: '5px solid #769656',
-    fontFamily: '-apple-system,BlinkMacSystemFont,sans-serif', fontSize: '18px',
-    fontWeight: '600', boxShadow: '0 8px 32px rgba(0,0,0,.7)', cursor: 'pointer',
-    animation: '_sfctin .28s ease',
-  });
-  const msg = document.createElement('span');
-  msg.textContent = text;
-  const hint = document.createElement('small');
-  hint.style.cssText = 'opacity:.5;font-size:11px;margin-left:6px';
-  hint.textContent = '(click to close)';
-  el.append(msg, hint);
-  el.onclick = () => el.remove();
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), ms || BANNER_TIMEOUT_MS);
 }
 
 // ── Result modal ─────────────────────────────────────────────────────────────
@@ -1115,34 +1249,6 @@ function showCard(card) {
 
 function closeCard(card) { card._sfctCleanup?.(); card.remove(); }
 
-// Asked only when the move list and the board cannot be reconciled on whose
-// turn it is. One question beats silently starting a game with the wrong player
-// up, which you would only notice once the engine moved a piece it should not
-// have been able to touch.
-function askSideToMove(onPick) {
-  const { card, body } = makeCard('sfct-ask', 'Who is to move?',
-    'this position does not say, so pick the side');
-  card.style.zIndex = '1000000'; // above the floating trigger, which stays up
-  const pick = (side) => () => { closeCard(card); onPick(side); };
-  const white = cardButton('\u2654  White', false);
-  const black = cardButton('\u265A  Black', false);
-  white.onclick = pick('w');
-  black.onclick = pick('b');
-  // A question you cannot back out of is a trap: the answer starts a game.
-  const cancel = document.createElement('button');
-  cancel.textContent = 'Cancel';
-  Object.assign(cancel.style, {
-    background: 'none', border: 'none', color: 'rgba(255,255,255,.45)',
-    fontSize: '11px', cursor: 'pointer', marginTop: '2px',
-  });
-  cancel.onclick = () => closeCard(card);
-  body.append(white, black, cancel);
-  showCard(card);
-}
-
-// ── Result modal ─────────────────────────────────────────────────
-// `opts.rematch === false` drops the "play again" button: a position that was
-// already over when you picked it would lead straight back to this card.
 function showResultModal(title, subtitle, opts) {
   const { card, body, content } = makeCard('sfct-result', title, subtitle || '');
   card.setAttribute('data-sfct', 'result');
@@ -1195,13 +1301,11 @@ function onContinueClick(e) {
     if (pageState?.fen) { startContinuation(board, null, strength, pageState.fen); return; }
     const side = readSideToMove(board);
     if (side) { startContinuation(board, side, strength); return; }
-    // Re-check the gate when the question is ANSWERED, not only when it was
-    // asked: the click that starts a game is this one, and the page may have
-    // moved on while the card sat open.
-    askSideToMove((picked) => {
-      if (chesscomState || !isGameOver()) return;
-      startContinuation(findActiveBoard(), picked, strength);
-    });
+    // No question is asked any more. A card of ours that stops the page to ask
+    // whose move it is belongs to an extension, not to a game - and the trigger
+    // is not offered at all on a page where the side to move cannot be settled,
+    // so this branch is only reached if the page changed under the click.
+    showNotice('Cannot tell whose move it is.');
   });
 }
 
@@ -1209,7 +1313,7 @@ function onContinueClick(e) {
 // looking at — and hand it to the engine.
 function startContinuation(board, side, strength, fenFromPage) {
   const fen = fenFromPage || getFEN(board, side);
-  if (!fen) { showBanner('Position not found.'); return; }
+  if (!fen) { showNotice('Position not found.'); return; }
   removeTrigger(); // the trigger goes away while you play
   showChesscomBoard(fen, bridgePlayerColor() || getPlayerColor(), strength);
 }
@@ -1267,8 +1371,19 @@ function injectFloatingButton() {
   log('button injected (floating fallback)');
 }
 
+// Can this page tell us whose move it is? If not, no trigger is offered: the
+// alternative was a card of ours asking the question, and nothing of ours
+// interrupts the page any more. Computed here, where it runs once per injection,
+// and never on the 200 ms poll.
+function sideIsKnown() {
+  if (pageState?.fen) return true;
+  const board = findActiveBoard();
+  return !!(board && readSideToMove(board));
+}
+
 function injectButtons() {
   if (document.getElementById('sfctplay-btn')) return;
+  if (!sideIsKnown()) return;
 
   // Chess.com's result card when it is on screen, otherwise the column holding
   // the move list. Coming back to a finished game later — which is when you
@@ -1405,7 +1520,6 @@ const navTimer = setInterval(() => {
   if (now === lastPage) return;
   lastPage = now;
   removeTrigger();
-  document.getElementById('sfctplay-banner')?.remove();
   hideChesscomBoard();
   tryInject();
 }, NAV_POLL_INTERVAL_MS);

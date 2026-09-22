@@ -68,6 +68,28 @@ to the release its zips were published under.
 
 ### Fixed
 
+- **Nothing of this extension sits on the page any more.** The status pill and
+  the "new game" banner are gone, and so is the card that used to stop the page
+  to ask whose move it was. A continuation announces itself the way a real game
+  does: Chess.com's own opponent row takes the engine's name, rating and face,
+  and gives them all back untouched when you leave. Esc ends a continuation. The
+  banner had a second sin worth naming - being fixed and ours, it swallowed the
+  first click of every continuation, because the extension's own handlers skip
+  the extension's own UI on purpose.
+- **The piece follows your finger.** There was no drag at all: the press and the
+  release were read, and nothing in between, so a piece only ever jumped to its
+  new square once the move was committed. It now travels with the cursor, hand
+  closed, with the move animation switched off while it is carried - measured on
+  a live board, the piece's centre sits exactly on the pointer. A press that
+  never travels is still a click.
+- **Move dots and the selected square stop outliving the move that made them.**
+  Two separate causes, both closed. Everything of ours was found among the
+  board's DIRECT children, so a Chess.com re-render that nested our nodes one
+  level deeper left them on screen and invisible to the code that removes them -
+  and the one-second watchdog, fooled the same way, painted a second set on top.
+  And the markers were cleared halfway through a function with no `catch`: a
+  throw anywhere above that line left them up for good. They are cleared first
+  now, before anything that can fail, and found anywhere under the board.
 - **A draw left the popup with no button in it.** The trigger is placed the
   moment a game reads as over, and Chess.com's result card is not on screen yet
   when that happens - timed on a live drawn game, the game ended at 49 ms, the
