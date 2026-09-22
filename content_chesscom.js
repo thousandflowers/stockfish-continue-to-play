@@ -351,15 +351,35 @@ function engineStrength(setting) {
   return { label: String(rating), uciElo: eloToUCIElo(rating) };
 }
 
-// Rename the opponent on the board so it is obvious who you are now playing.
-// Returns a function that puts the original name back.
-function labelOpponentAsEngine(text) {
+// Turn the opponent's own player card into Stockfish, so who you are playing is
+// where you already look for it rather than on a strip of our own.
+//
+// Found by DATA, not by class names: inside the opponent's row, the leaf that
+// reads as a rating is the rating, and the first other leaf carrying letters is
+// the name. Chess.com has renamed everything about that row three times in this
+// project's history; what it holds has not changed.
+//
+// Returns a function that puts every word back exactly as it was.
+function labelOpponentAsEngine(name, rating) {
   const row = opponentRow();
-  const el = row?.querySelector('[class*="username"], [class*="tagline"], [class*="name"]');
-  if (!el) return null;
-  const original = el.textContent;
-  el.textContent = text;
-  return () => { try { el.textContent = original; } catch (_) {} };
+  if (!row) return null;
+  const leaves = [...row.querySelectorAll('*')].filter(el => !el.children.length && (el.textContent || '').trim());
+  const ratingEl = leaves.find(el => RATING_RE.test((el.textContent || '').trim()));
+  const nameEl = leaves.find(el => el !== ratingEl && /[a-z]/i.test((el.textContent || '').trim()));
+  const undo = [];
+  const set = (el, text) => {
+    if (!el) return;
+    const was = el.textContent;
+    undo.push(() => { try { el.textContent = was; } catch (_) {} });
+    // Keep their own parenthesised shape when that is how the rating is written.
+    el.textContent = text;
+  };
+  set(nameEl, name);
+  if (ratingEl && rating) {
+    const parenthesised = /^\(.*\)$/.test((ratingEl.textContent || '').trim());
+    set(ratingEl, parenthesised ? `(${rating})` : String(rating));
+  }
+  return undo.length ? () => undo.forEach(f => f()) : null;
 }
 
 function showChesscomBoard(fen, color, strengthSetting) {
@@ -406,7 +426,7 @@ function showChesscomBoard(fen, color, strengthSetting) {
     syncBoardToState();
     attachPointerHandlers();
     startRefreshTimer();
-    chesscomState._restoreOpponentName = labelOpponentAsEngine(`Stockfish (${strength.label})`);
+    chesscomState._restoreOpponentName = labelOpponentAsEngine('Stockfish', strength.label);
     showStatusBadge(`Stockfish ${strength.label} · loading engine…`);
     // Say plainly that a new game has started — the board looks the same as the
     // one that just ended, so without this it is not obvious anything changed.
@@ -1044,6 +1064,7 @@ function cardButton(text, primary) {
   b.textContent = text;
   b.style.width = '100%';
   b.style.boxSizing = 'border-box';
+  b.style.minWidth = '0';
   // cc-button-primary brings its own green gradient. The secondary paints
   // nothing outside their own containers, so it gets their input surface token
   // rather than a colour invented here.
@@ -1103,7 +1124,8 @@ function makeCard(id, title, subtitle, opts) {
   Object.assign(inner.style, { padding: '22px 20px 14px', textAlign: 'center',
     boxSizing: 'border-box' });
   const h = el('div', 'game-over-modal-header-header', title);
-  Object.assign(h.style, { fontSize: '26px', fontWeight: '800', lineHeight: '1.15' });
+  Object.assign(h.style, { fontSize: '26px', fontWeight: '800', lineHeight: '1.15',
+    minWidth: '0', whiteSpace: 'normal', overflowWrap: 'anywhere' });
   inner.appendChild(h);
   if (subtitle) {
     const sub = el('div', null, subtitle);
@@ -1182,8 +1204,11 @@ function showResultModal(title, subtitle, opts) {
   note.textContent = replayable
     ? 'The final position stays on the board until you leave.'
     : 'Go back, pick an earlier move, then Continue again.';
+  // minWidth:0 and a wrap: a flex child keeps min-width:auto, so this one line
+  // refused to shrink and spilled past a card that clips its overflow.
   Object.assign(note.style, { fontSize: '12px', opacity: '.5', textAlign: 'center', marginTop: '2px',
-    color: 'var(--color-text-subtle, inherit)', lineHeight: '1.3' });
+    color: 'var(--color-text-subtle, inherit)', lineHeight: '1.3',
+    minWidth: '0', whiteSpace: 'normal', overflowWrap: 'anywhere' });
   body.append(back, note);
   showCard(card);
 }
