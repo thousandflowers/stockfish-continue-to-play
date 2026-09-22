@@ -802,24 +802,16 @@ function startRefreshTimer() {
     // board node — put them back. Not in native mode: there are never any of
     // our pieces there, so this test is always true and would rebuild the
     // markers once a second for nothing.
-    // Never leave a blank board. Our style hides Chess.com's pieces so ours can
-    // stand in their place; if ours are not there, the board shows nothing at
-    // all and the game is unplayable however well the engine is running behind
-    // it. Try once to draw them, and if that does not work, drop the style and
-    // give their pieces back. A board showing THEIR position is wrong but
-    // playable; a board showing nothing is broken, and broken is worse than
-    // wrong. This is the state a real page reached with 27 of their pieces
-    // hidden and none of ours drawn, and nothing in the console to say why.
-    const hiding = document.getElementById('sfct-board-style');
-    const mine = () => cur.querySelector(':scope > [data-sfct="piece"]');
-    if (!chesscomState.native && !mine()) {
-      syncBoardToState();
-      if (hiding && !mine()) {
-        warn('no pieces of ours on the board \u2014 handing it back to Chess.com');
-        hiding.remove();
-        chesscomState.native = true; // stop hiding, stop drawing: theirs is what shows
-      }
-    }
+    //
+    // There used to be more here: if redrawing still left no pieces, it dropped
+    // the style hiding Chess.com's and switched to native. That was meant to
+    // rescue a blank board, and it made things worse — native sends the move to
+    // the bridge, the bridge refuses it, the refusal falls back to overlay,
+    // overlay finds no pieces, and round it goes, adding and removing the
+    // hiding style once a second. The pieces you moved never appeared. A rescue
+    // that flips the mode it is running in cannot be a rescue; whatever leaves
+    // the board empty has to be found and fixed, not papered over.
+    if (!chesscomState.native && !cur.querySelector(':scope > [data-sfct="piece"]')) syncBoardToState();
   }, REFRESH_INTERVAL_MS);
 }
 
