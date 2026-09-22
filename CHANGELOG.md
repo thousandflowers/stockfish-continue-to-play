@@ -4,7 +4,7 @@ All notable changes to this project are documented here. Versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html), and each entry links
 to the release its zips were published under.
 
-## [3.3.0] - 2026-09-21
+## [3.3.0] - 2026-09-23
 
 ### Added
 
@@ -25,9 +25,11 @@ to the release its zips were published under.
   differently. Still only ever after a game has ended - the trigger is gated on
   the same game-over check as before, which has been tightened rather than
   duplicated.
-- **A "who is to move?" prompt** for the rare position whose side to move cannot
-  be established. Starting the wrong side is only visible once the engine moves
-  a piece it should not have been able to touch, so it asks instead of guessing.
+- **The arrow keys walk the continuation.** ← and → step one move, ↑ jumps to
+  the position you continued from, ↓ back to the live one - Chess.com's own
+  keys, which used to walk their board hidden under ours, so nothing visible
+  moved. A click on the board while looking back returns to the present.
+- **A new icon**: the seahorse knight, every size derived from one master.
 - **Continued games can end in a draw.** A game here ended when the side to move
   ran out of legal moves, which is checkmate and stalemate and nothing else.
   Every other draw leaves legal moves on the board, so a continuation that
@@ -106,14 +108,25 @@ to the release its zips were published under.
   end-of-game artwork sits on the board as its own layer, not as pieces, so
   hiding their pieces left it painted over the new game. Hidden while you play,
   and handed back untouched when you stop.
-- **Hovering a promotion choice rubbed the piece out.** The hover tint was
-  written as a background shorthand, which clears the sprite the piece is drawn
-  with.
-- **The end-of-game card belongs to the page now.** It was a hand-built box in a
-  system font that matched nothing around it; it wears Chess.com's own modal and
-  button classes instead, so it follows their styling and their theme. It stays
-  a node of ours in the page body and never enters their component tree - which
-  is the thing that takes the board down.
+- **The promotion picker is Chess.com's own promotion window**, built the way
+  their board builds it: the white column, the close cross, the opening
+  animation, the scale under the pointer and the sprites of your piece theme.
+- **The end-of-game card is their v6 game-over modal, copied node for node** -
+  title, subtitle, their close cross, x-large buttons with their own glyphs.
+  Rendered beside theirs on a live page it computes identically, down to the
+  8px between icon and label. It stays a node of ours in the page body and never
+  enters their component tree - which is the thing that takes the board down.
+- **The trigger is one more button of their game-over card**, now labelled
+  **Keep Playing**. It docks over the foot of their card and takes the shape of
+  their buttons - whichever card it is: the v6 one, the bots' one, the signed-in
+  one with New and Rematch side by side - and re-reads it on every tick, so a
+  card whose buttons arrive late no longer leaves it small.
+- **A clicked piece no longer sinks under its own selected square.** Releasing
+  it stripped its stacking order, and their piece class computes none.
+- **Text written into Chess.com's nodes no longer goes missing.** Replacing a
+  node's text swapped out the text node their framework keeps patching; after a
+  page change without a reload, words could land off screen. The existing text
+  node is written instead.
 
 - **No more queen nobody chose.** Two paths turned a promotion into a queen
   without asking: a `'q'` default in `toUci()`, and a fallback in the picker for
