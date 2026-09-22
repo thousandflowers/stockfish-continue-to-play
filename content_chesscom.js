@@ -296,6 +296,14 @@ function injectBoardStyle() {
     // stop hands the board straight back instead of leaving it blank.
     'wc-chess-board [class*="piece"]:not([data-sfct]),chess-board [class*="piece"]:not([data-sfct]){display:none!important}',
     '[data-sfct="piece"]{transition:transform var(--move-animation-duration,180ms) ease-out}',
+    // Their end-of-game artwork sits on the board as its own children, not as
+    // pieces, so hiding their pieces left it painted over OUR game for the whole
+    // of it - the halves on both kings after a draw being the one you cannot
+    // miss. Measured on a live drawn game: div.animated-effect.drawwhite.square-51
+    // and .drawblack.square-58, matching getMarkings().effect
+    // { e1: DrawWhite, e8: DrawBlack }. Hidden, never removed, like their pieces:
+    // dropping this style tag on stop gives the finished game back intact.
+    'wc-chess-board [class*="animated-effect"]:not([data-sfct]),chess-board [class*="animated-effect"]:not([data-sfct]){display:none!important}',
     // The king in check. Chess.com draws this with a VFX layer whose artwork is
     // not reachable from a class, so this is their red radial glow instead.
     //
@@ -487,6 +495,25 @@ const SQUARE_BOX = 'position:absolute;top:0;left:0;width:12.5%;height:12.5%;';
 // Recomputed every render, so a resized board keeps the right weight.
 const RING_RATIO = 7.5 / 86;
 
+// Chess.com writes .highlight's paint INLINE on every square it marks - the class
+// carries the geometry, none of the colour. Measured side by side on one live
+// board: their marked square is background-color rgb(255,255,51) at opacity .5,
+// and ours, wearing the class and nothing else, came out the same yellow at
+// opacity 1 - the same colour at twice the strength, which is exactly what a
+// selected piece looked like.
+//
+// Their own square is sampled when the board has one, so a board theme that
+// changes the colour is followed rather than overridden; the fallback is their
+// own value, for a board with nothing marked on it yet.
+const HIGHLIGHT_OPACITY = '.5';
+
+function highlightPaint(board) {
+  const theirs = board.querySelector(':scope > .highlight:not([data-sfct])');
+  if (!theirs) return 'opacity:' + HIGHLIGHT_OPACITY;
+  const s = getComputedStyle(theirs);
+  return 'background-color:' + s.backgroundColor + ';opacity:' + (s.opacity || HIGHLIGHT_OPACITY);
+}
+
 function makePieceNode(pc) {
   const el = document.createElement('div');
   el.setAttribute('data-sfct', 'piece');
@@ -595,7 +622,7 @@ function syncBoardToState() {
       const sel = document.createElement('div');
       sel.setAttribute('data-sfct', 'sel');
       sel.className = 'highlight';
-      sel.style.cssText = SQUARE_BOX + 'z-index:2';
+      sel.style.cssText = SQUARE_BOX + 'z-index:2;' + highlightPaint(board);
       place(sel, selectedSq);
       board.appendChild(sel);
     }
@@ -717,8 +744,11 @@ function askPromotion(to, side, onPick) {
     cell.className = `piece ${side}${p}`;
     cell.style.cssText = 'position:relative;width:100%;height:25%;left:auto;top:auto;' +
       'transform:none;background-size:100% 100%;cursor:pointer';
-    cell.onmouseenter = () => { cell.style.background = 'rgba(0,0,0,.08)'; };
-    cell.onmouseleave = () => { cell.style.background = ''; };
+    // backgroundColor, never the `background` shorthand: the shorthand resets
+    // background-image too, and the piece IS a background image borrowed from
+    // their sprite - so hovering a choice used to rub the piece out.
+    cell.onmouseenter = () => { cell.style.backgroundColor = 'rgba(0,0,0,.08)'; };
+    cell.onmouseleave = () => { cell.style.backgroundColor = ''; };
     cell.onclick = (e) => { e.preventDefault(); e.stopPropagation(); col.remove(); onPick(p); };
     col.appendChild(cell);
   }
@@ -1194,6 +1224,22 @@ function extensionAlive() {
 function alignTrigger() {
   const dock = document.getElementById('sfctplay-dock');
   if (!dock) return;
+  // Their result modal arrives AFTER the game reads as over, and the trigger is
+  // placed on the first frame that reads that way. Timed on a live draw: the
+  // game was over at 49 ms, we docked to the move-list column at 301 ms, and
+  // their modal only rendered at 557 ms - so the button sat at the foot of the
+  // column while the popup covering the board had none. It never moved, because
+  // injectButtons() returns early once the button exists.
+  //
+  // So the anchor is a decision that gets revisited, not one taken once: the
+  // moment a modal is there, the trigger moves into it. The opposite case was
+  // always handled - a modal that goes away drops the trigger, and the next poll
+  // re-docks it to the column.
+  if (dock.dataset.anchor === 'panel' && findGameOverModal()) {
+    removeTrigger();
+    injectButtons();
+    return;
+  }
   const anchor = dock.dataset.anchor === 'panel' ? sidebarPanel() : findGameOverModal();
   if (!anchor) { removeTrigger(); return; }
   const r = anchor.getBoundingClientRect();

@@ -324,6 +324,30 @@ await page.locator('[data-sfct="promo"]').waitFor({ timeout: 5000 }).catch(async
 const offered = await page.$$eval('[data-sfct="promo"] > div', els =>
   els.map(e => (e.className.match(/\bw([qnrb])\b/) || [])[1]));
 if (offered.join('') !== 'qnrb') fail('promotion picker offered: ' + offered.join(','));
+
+// 15b. hovering a choice must not rub the choice out. The piece IS a background
+// image borrowed from their sprite, so a hover that writes the `background`
+// shorthand clears it - which is how this broke, with all four cells going blank
+// under the pointer.
+// On a real page the sprite arrives from Chess.com's own stylesheet, which this
+// fixture does not load, so one is stood in here: what is under test is our
+// hover handler, and a shorthand write clears an inline image exactly as it
+// clears a stylesheet one.
+const hoverKept = await page.evaluate(() => {
+  const cell = document.querySelectorAll('[data-sfct="promo"] > div')[1];
+  cell.style.backgroundImage = 'url("data:image/gif;base64,R0lGODlhAQABAAAAACw=")';
+  const before = getComputedStyle(cell).backgroundImage;
+  cell.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }));
+  const during = getComputedStyle(cell).backgroundImage;
+  const tint = getComputedStyle(cell).backgroundColor;
+  cell.dispatchEvent(new MouseEvent('mouseleave', { bubbles: false }));
+  return { before, during, tint, after: getComputedStyle(cell).backgroundColor };
+});
+if (hoverKept.before === 'none') fail('the stand-in sprite did not take');
+if (hoverKept.during !== hoverKept.before) fail('hover erased the promotion sprite: ' + JSON.stringify(hoverKept));
+if (hoverKept.tint === hoverKept.after) fail('hover tinted nothing: ' + JSON.stringify(hoverKept));
+console.log('PASS 15b: hovering a promotion choice tints it and keeps its piece - ' + hoverKept.tint);
+
 await page.locator('[data-sfct="promo"] > div').nth(1).click(); // the knight
 await page.waitForTimeout(1200);
 const promoted = await pieceAt('18');
