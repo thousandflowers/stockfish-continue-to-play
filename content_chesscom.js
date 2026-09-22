@@ -1331,6 +1331,9 @@ function startContinuation(board, side, strength, fenFromPage) {
 // wrapper from an older generation of their markup collapses inside that grid.
 function makeNativeButton() {
   const btn = cardButton('\u265F Continue vs Computer', false);
+  // NOT data-sfct: that marks the overlay, which teardown sweeps away. The
+  // trigger is not part of a game and is managed by removeTrigger().
+  btn.removeAttribute('data-sfct');
   btn.id = 'sfctplay-btn';
   btn.onclick = onContinueClick;
   return btn;

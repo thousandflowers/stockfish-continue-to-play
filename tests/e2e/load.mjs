@@ -150,7 +150,9 @@ console.log('         white pawn e2→e4 on the Chess.com board; black changed:'
 await page.locator('#sfct-badge').click();
 await page.waitForTimeout(300);
 const left = await page.locator('[data-sfct]').count();
-if (left !== 0) fail(`overlay pieces left after stop: ${left}`);
+if (left !== 0) fail('overlay pieces left after stop: ' + JSON.stringify(
+  await page.$$eval('[data-sfct]', els => els.map(e => e.tagName + '#' + (e.id || '?') +
+    '[' + e.getAttribute('data-sfct') + '] ' + String(e.className).slice(0, 40)))));
 // …and Chess.com's own pieces are visible again, not stripped out: stopping must
 // hand the board back, not leave it blank.
 const restored = await page.$$eval('#board [class*="piece"]:not([data-sfct])',
