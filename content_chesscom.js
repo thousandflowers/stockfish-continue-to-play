@@ -1198,8 +1198,17 @@ function glyph(name, size) {
   const span = document.createElement('span');
   span.setAttribute('aria-hidden', 'true');
   span.className = `cc-icon-glyph_57606db cc-icon-size-${size}_57606db`;
-  span.innerHTML = '<svg data-glyph="' + name + '" aria-hidden="true" viewBox="0 0 24 24" ' +
-    'xmlns="http://www.w3.org/2000/svg"><path d="' + GLYPHS[name] + '"></path></svg>';
+  // Built node by node, not through innerHTML, which AMO's linter flags
+  // whatever the string holds.
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('data-glyph', name);
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  const path = document.createElementNS(NS, 'path');
+  path.setAttribute('d', GLYPHS[name]);
+  svg.appendChild(path);
+  span.appendChild(svg);
   return span;
 }
 
