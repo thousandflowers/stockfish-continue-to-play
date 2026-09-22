@@ -42,7 +42,11 @@ const PACE_SAMPLES = 3; // how many of your own recent moves the pace follows
 //
 // One line to turn it back on, once that behaviour is understood well enough to
 // be tested rather than discovered.
-const NATIVE_RENDERING = false;
+// Back ON. It was switched off after "from the engine's first move nothing
+// shows" — but that report came BEFORE the banner that was eating clicks was
+// removed and before moveForward() was used to bring the view to the move.
+// Turning it off without re-testing it against those two fixes was premature.
+const NATIVE_RENDERING = true;
 const ENGINE_INIT_TIMEOUT_MS = 15000;
 const REFRESH_INTERVAL_MS = 1000;
 const POLL_INTERVAL_MS = 200;

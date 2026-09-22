@@ -678,10 +678,10 @@ const nat = await page.evaluate(() => ({
 // Native RENDERING is off: the bridge reads the position, we draw it. Their
 // board is left completely alone - no continuation branched, no move played on
 // it - which is also why their game can never be disturbed by a continuation.
-if (nat.ours < 3) fail(`we drew nothing (${nat.ours} pieces) though we are the ones rendering`);
-if (nat.log.continuation !== 0 || nat.log.moves.length !== 0)
-  fail('their board was driven after all: ' + JSON.stringify(nat.log));
-console.log('PASS 22: bridge reads, we draw -', nat.ours, 'pieces, their board untouched');
+if (nat.ours !== 0) fail(`we painted ${nat.ours} pieces in native mode; their board should be drawing`);
+if (nat.theirs < 3) fail(`Chess.com's own pieces were hidden in native mode (${nat.theirs} visible)`);
+if (nat.log.continuation !== 1) fail('the continuation was not branched off: ' + JSON.stringify(nat.log));
+console.log('PASS 22: native mode - we paint nothing,', nat.theirs, 'of their pieces stand, continuation branched');
 
 // Nothing of ours may be a CHILD of anything Chess.com renders with Vue. An
 // unexpected child makes their next patch throw "insertBefore … not a child of
@@ -721,7 +721,7 @@ const sel = await page.evaluate(() => {
   const mark = b.querySelector('[data-sfct="sel"]');
   // Ours: in overlay mode Chess.com's own are hidden under our style, so
   // theirs being display:none is correct rather than a vanished piece.
-  const piece = b.querySelector('[data-sfct="piece"].square-52');
+  const piece = [...b.querySelectorAll('[class*="piece"]')].find(e => e.className.includes('square-52'));
   return { has: !!mark, markAt: kids.indexOf(mark), pieceAt: kids.indexOf(piece),
     pieceShown: !!piece && getComputedStyle(piece).display !== 'none',
     opacity: mark ? getComputedStyle(mark).opacity : null,
@@ -759,17 +759,16 @@ if (afterRight !== 0) fail('a right-click was taken for a move: ' + afterRight);
 console.log('PASS 22d: right-click reaches their board unprevented, and is not taken for a move');
 await page.mouse.click(nsq(5, 4).x, nsq(5, 4).y); await page.waitForTimeout(1500);
 const played = await page.evaluate(() => window.__log.moves);
-if (played.length) fail('a move was played on their board: ' + JSON.stringify(played));
-const onOurs = await page.$eval('#board', b => !!b.querySelector('[data-sfct="piece"].square-54'));
-if (!onOurs) fail('the pawn did not land on e4 on our own board');
-console.log('PASS 22e: the move is drawn by us, their board never touched');
+if (!played.some(m => m.from === 'e2' && m.to === 'e4'))
+  fail('the move never reached their board: ' + JSON.stringify(played));
+console.log('PASS 22e: the move went to their board -', JSON.stringify(played[0]));
 
 // …and stopping hands the real game back.
 await stopGame();
 await page.waitForTimeout(800);
 const reset = await page.evaluate(() => window.__log.reset);
-if (reset) fail('their line was reset though we never branched it: ' + reset);
-console.log('PASS 22f: nothing to restore, because nothing was changed');
+if (!reset) fail('resetToMainLine was never called - the variation would be left on the game');
+console.log('PASS 22f: stopping dropped the variation and restored the main line');
 
 
 // 23. the board component is there, but it will not take our moves - its own
