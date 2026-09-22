@@ -730,6 +730,17 @@ function syncBoardToState() {
       place(dot, dest);
       board.appendChild(dot);
     }
+    // An invisible record of what this render actually did. The decision that
+    // matters — are we drawing, or is Chess.com — lives in the isolated world
+    // where a page console cannot see it, and not being able to read it is what
+    // made a blank board impossible to diagnose from the outside.
+    board.setAttribute('data-sfct-debug', JSON.stringify({
+      native: !!st.native,
+      men: Object.keys(boardData).length,
+      drawn: board.querySelectorAll(':scope > [data-sfct="piece"]').length,
+      hiding: !!document.getElementById('sfct-board-style')?.textContent.includes('display:none'),
+      bridge: !!pageState,
+    }));
   } finally { _sfSyncing = false; }
 }
 
