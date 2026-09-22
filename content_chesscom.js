@@ -404,6 +404,8 @@ function showChesscomBoard(fen, color, strengthSetting) {
 
     chesscomState = {
       startFen: fen, moves: [], boardData: fenToBoard(fen),
+      // Plies shown while walking back with the arrow keys; null = the live position.
+      viewPly: null,
       selectedSq: null, playerSide, engineSide, sideToMove, board,
       strengthSetting, finished: false,
       // Seconds per move in the game just played, when its clocks are on the page.
@@ -456,17 +458,49 @@ function showChesscomBoard(fen, color, strengthSetting) {
 // that the badge is gone, so it is kept apart from the pointer handlers: endGame
 // runs _ptrCleanup and nulls it, and Esc has to keep working on the result card
 // after that.
+// The arrows walk the continuation the way Chess.com's own move list does: one
+// ply back or forward, or straight to either end. Only this continuation -
+// the game it started from belongs to their move list.
+const ARROW_STEPS = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -Infinity, ArrowDown: Infinity };
+
+function stepView(step) {
+  const st = chesscomState;
+  const at = st.viewPly ?? st.moves.length;
+  const next = Math.max(0, Math.min(st.moves.length, at + step));
+  st.viewPly = next === st.moves.length ? null : next;
+  st.selectedSq = null; // a selection belongs to the live position only
+  syncBoardToState();
+}
+
+// The position being shown: the live one, or a replay of the first viewPly moves.
+function shownPosition(st) {
+  if (st.viewPly === null) return { board: st.boardData, side: st.sideToMove };
+  let board = fenToBoard(st.startFen);
+  for (const uci of st.moves.slice(0, st.viewPly)) board = applyUciMove(board, uci).board;
+  const first = st.startFen.split(' ')[1] === 'b' ? 'b' : 'w';
+  const other = first === 'w' ? 'b' : 'w';
+  return { board, side: st.viewPly % 2 === 0 ? first : other };
+}
+
 function attachKeyHandler() {
   const onKey = (e) => {
-    if (e.key !== 'Escape') return;
     if (e.target?.closest?.('input,textarea,[contenteditable]')) return; // their chat
+    if (e.key in ARROW_STEPS) {
+      // Swallowed even when there is nowhere to go: left to them, the arrows walk
+      // Chess.com's own board, which is hidden under ours - nothing visible moves.
+      if (!chesscomState || document.querySelector('[data-sfct="promo"]')) return;
+      e.preventDefault(); e.stopPropagation();
+      stepView(ARROW_STEPS[e.key]);
+      return;
+    }
+    if (e.key !== 'Escape') return;
     if (cancelPromotion()) { e.preventDefault(); e.stopPropagation(); return; }
     if (!chesscomState) return;           // nothing of ours is up: their Esc is theirs
     e.preventDefault(); e.stopPropagation();
     dismissResult();
   };
-  document.addEventListener('keydown', onKey, { capture: true });
-  chesscomState._keyCleanup = () => document.removeEventListener('keydown', onKey, { capture: true });
+  window.addEventListener('keydown', onKey, { capture: true });
+  chesscomState._keyCleanup = () => window.removeEventListener('keydown', onKey, { capture: true });
 }
 
 function hideChesscomBoard() {
@@ -598,7 +632,8 @@ function syncBoardToState() {
   _sfSyncing = true;
   try {
     const st = chesscomState;
-    const { board, boardData, selectedSq } = st;
+    const { board, selectedSq } = st;
+    const { board: boardData, side: shownSide } = shownPosition(st);
 
     // Cleared FIRST, before a single line below can throw. This function has one
     // try/finally and no catch, and it is the only place in the file that removes
@@ -662,7 +697,7 @@ function syncBoardToState() {
     // REUSED, never rebuilt: recreating it restarts Chess.com's grow/wiggle, so
     // it replayed on every re-render — picking a piece up made the king twitch.
     // It only plays when the check first appears, or moves to another king.
-    const checkedKing = isKingAttacked(boardData, st.sideToMove) && kingSquare(boardData, st.sideToMove);
+    const checkedKing = isKingAttacked(boardData, shownSide) && kingSquare(boardData, shownSide);
     let mark = ours(board, 'check')[0] || null;
     if (!checkedKing) {
       mark?.remove();
@@ -752,6 +787,13 @@ function attachPointerHandlers() {
     if (cancelPromotion()) { e.preventDefault(); e.stopPropagation(); return; }
     const b = currentBoard();
     if (!b || !inside(b, e)) return;
+    // Looking at an earlier position: this press only brings the board back to
+    // the present. Moving from a past position is not a thing this game does.
+    if (chesscomState.viewPly !== null) {
+      e.preventDefault(); e.stopPropagation();
+      stepView(Infinity);
+      return;
+    }
     const sq = computeSquareFromClick(b, e.clientX, e.clientY);
     if (!sq) return;
     dragStart = sq;
@@ -1043,6 +1085,7 @@ function onEngineMove(uci) {
   if (!res.moved) { warn('engine move on empty square', uci); endGame('Game stopped', 'the board and the engine went out of sync'); return; }
   st.boardData = res.board;
   st.moves.push(uci);
+  st.viewPly = null; // its reply is shown, wherever you were looking
   st.sideToMove = st.playerSide;
   recordMove(st, res.moved);
   st.turnStart = Date.now();

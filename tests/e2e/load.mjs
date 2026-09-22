@@ -164,6 +164,26 @@ console.log('         white pawn e2→e4 on the Chess.com board; black changed:'
   before.filter(x => !after.includes(x)).join(' ') || '(none)', '→',
   after.filter(x => !before.includes(x)).join(' '));
 
+// 7b. The arrow keys walk the continuation: ← one ply back, ↑ the start, ↓ the
+// live position again. Two plies were played (e4 and the reply).
+await page.keyboard.press('ArrowLeft');
+const oneBack = await overlaySquares();
+// One ply back = the start with e4 played: the reply, capture included, is undone.
+if (oneBack.join() !== before.map(s => s === 'wp@square-52' ? 'wp@square-54' : s).sort().join())
+  fail('← did not take back only the reply: ' + oneBack);
+await page.keyboard.press('ArrowUp');
+if ((await overlaySquares()).join() !== before.join()) fail('↑ did not show the start: ' + await overlaySquares());
+await page.keyboard.press('ArrowRight');
+if ((await overlaySquares()).join() !== oneBack.join()) fail('→ did not step forward one ply');
+await page.keyboard.press('ArrowDown');
+if ((await overlaySquares()).join() !== after.join()) fail('↓ did not return to the live position');
+// A press on the board while looking back only returns to the present.
+await page.keyboard.press('ArrowUp');
+await page.mouse.move(from.x, from.y); await page.mouse.down(); await page.mouse.up();
+if ((await overlaySquares()).join() !== after.join()) fail('a click while looking back did not return to the present');
+if (await page.locator('#board [data-sfct="sel"]').count()) fail('that click also selected a piece');
+console.log('PASS 7b: ←/→/↑/↓ walk the continuation, a click returns to the present');
+
 // 8. stopping restores the board (no leftover overlay)
 await stop();
 await page.waitForTimeout(300);
