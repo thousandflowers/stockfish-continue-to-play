@@ -69,27 +69,6 @@ await page.route('**/*', async route => {
 
 const fail = (m) => { console.log('FAIL:', m); console.log(logs.join('\n')); process.exit(1); };
 
-// The extension no longer draws anything for its own state - no badge, no pill,
-// no strip; every version of that got in the way of Chess.com's own UI. What it
-// is doing is an attribute on the board instead.
-const state = () => page.evaluate(() =>
-  document.querySelector('wc-chess-board,chess-board')?.dataset.sfctState || '');
-const hasState = (re) => page.waitForFunction((src) => new RegExp(src).test(
-  document.querySelector('wc-chess-board,chess-board')?.dataset.sfctState || ''),
-  re, { timeout: 60000 });
-
-// Stopping the way a person does, through the extension's own on/off switch.
-// There is no control of ours on the page to click any more, and a hidden one
-// would exist only for this file.
-const stopGame = async () => {
-  if (!ctx.serviceWorkers().length) await ctx.waitForEvent('serviceworker', { timeout: 15000 });
-  const [sw] = ctx.serviceWorkers();
-  await sw.evaluate(() => chrome.storage.local.set({ active: false }));
-  await page.waitForTimeout(600);
-  await sw.evaluate(() => chrome.storage.local.set({ active: true }));
-  await page.waitForTimeout(500);
-};
-
 await page.goto('https://www.chess.com/game/live/123456', { waitUntil: 'domcontentloaded' });
 
 // 1. button injects on the game-over screen
@@ -99,11 +78,11 @@ console.log('PASS 1: button injected —', (await btn.textContent()).trim());
 
 // 2. clicking it starts the inline game
 await btn.click();
-await hasState('.').catch(async () => {
+await page.waitForSelector('#sfct-badge', { timeout: 10000 }).catch(async () => {
   const banner = await page.locator('#sfctplay-banner').textContent().catch(() => '(none)');
-  fail('the extension never reported a state; banner=' + banner);
+  fail('status badge missing; banner=' + banner);
 });
-console.log('PASS 2: badge —', await state());
+console.log('PASS 2: badge —', await page.locator('#sfct-badge').textContent());
 
 // 3. our overlay pieces render on the real board
 const overlay = await page.locator('#board [data-sfct]').count();
@@ -117,10 +96,10 @@ console.log('PASS 4: trigger stays gone mid-game');
 
 // 5. the engine actually loads and reaches "Your move" / legal moves
 await page.waitForFunction(
-  () => /Your move|thinking/.test(document.querySelector('wc-chess-board,chess-board')?.dataset.sfctState || ''),
+  () => /Your move|thinking/.test(document.getElementById('sfct-badge')?.textContent || ''),
   null, { timeout: 40000 }
 ).catch(() => fail('engine never became ready: ' + logs.join(' | ')));
-console.log('PASS 5: engine ready —', await state());
+console.log('PASS 5: engine ready —', await page.locator('#sfct-badge').textContent());
 
 // 6. play a legal move (e2-e4 style: our white pawn e2 is square-52)
 const boardBox = await page.locator('#board').boundingBox();
@@ -143,7 +122,7 @@ await page.mouse.move(to.x, to.y); await page.mouse.down(); await page.mouse.up(
 
 // 7. Stockfish replies → badge returns to "Your move" and move count grew
 await page.waitForFunction(
-  () => /Your move/.test(document.querySelector('wc-chess-board,chess-board')?.dataset.sfctState || ''),
+  () => /Your move/.test(document.getElementById('sfct-badge')?.textContent || ''),
   null, { timeout: 45000 }
 ).catch(() => fail('Stockfish never replied: ' + logs.join(' | ')));
 const after = await overlaySquares();
@@ -168,12 +147,10 @@ console.log('         white pawn e2→e4 on the Chess.com board; black changed:'
   after.filter(x => !before.includes(x)).join(' '));
 
 // 8. stopping restores the board (no leftover overlay)
-await stopGame();
+await page.locator('#sfct-badge').click();
 await page.waitForTimeout(300);
 const left = await page.locator('[data-sfct]').count();
-if (left !== 0) fail('overlay pieces left after stop: ' + JSON.stringify(
-  await page.$$eval('[data-sfct]', els => els.map(e => e.tagName + '#' + (e.id || '?') +
-    '[' + e.getAttribute('data-sfct') + '] ' + String(e.className).slice(0, 40)))));
+if (left !== 0) fail(`overlay pieces left after stop: ${left}`);
 // …and Chess.com's own pieces are visible again, not stripped out: stopping must
 // hand the board back, not leave it blank.
 const restored = await page.$$eval('#board [class*="piece"]:not([data-sfct])',
@@ -194,16 +171,16 @@ const restart = async () => {
         btnDisplay: b ? getComputedStyle(b).display : null,
         modalDisplay: m ? getComputedStyle(m).display : null,
         blocker: !!document.getElementById('sfct-modal-blocker'),
-        state: document.querySelector('wc-chess-board,chess-board')?.dataset.sfctState,
+        badge: !!document.getElementById('sfct-badge'),
       };
     });
     fail('trigger button never came back: ' + JSON.stringify(diag));
   });
   await page.locator('#sfctplay-btn').click();
-  await hasState('.');
+  await page.waitForSelector('#sfct-badge', { timeout: 10000 });
 };
 await restart();
-await stopGame(); // stop while the engine is still loading
+await page.locator('#sfct-badge').click(); // stop while the engine is still loading
 await page.waitForTimeout(16000);          // outlive the abandoned init's 15 s timeout
 const stale = await page.locator('#sfctplay-banner').textContent().catch(() => '');
 if (/Engine failed/.test(stale || '')) fail('bogus engine-failure banner after stopping mid-load');
@@ -212,11 +189,11 @@ console.log('PASS 9: no stale engine-failure banner after stopping mid-load');
 // 10. and the next game still starts normally
 await restart();
 await page.waitForFunction(
-  () => /Your move|thinking/.test(document.querySelector('wc-chess-board,chess-board')?.dataset.sfctState || ''),
+  () => /Your move|thinking/.test(document.getElementById('sfct-badge')?.textContent || ''),
   null, { timeout: 40000 }
 ).catch(() => fail('engine never became ready after a mid-load stop'));
 if (await page.locator('#board [data-sfct]').count() < 10) fail('board lost its pieces after restart');
-console.log('PASS 10: restart after a mid-load stop works —', await state());
+console.log('PASS 10: restart after a mid-load stop works —', await page.locator('#sfct-badge').textContent());
 
 // 11. losing is detected and named. Fool's mate: after 1. f3 e5 2. g4 it is
 // Black (the engine) to move and Qd8-h4 is mate, so the player must be told they
@@ -248,15 +225,7 @@ await page.goto('https://www.chess.com/game/live/mate', { waitUntil: 'domcontent
 await page.locator('#sfctplay-btn').waitFor({ timeout: 10000 }).catch(() => fail('no button on the mate page'));
 await page.locator('#sfctplay-btn').click();
 await page.locator('#sfct-result').waitFor({ timeout: 90000 }).catch(async () => fail(
-  'no result modal; ' + JSON.stringify(await page.evaluate(() => {
-    const c = document.getElementById('sfct-result');
-    const r = c && c.getBoundingClientRect();
-    return { state: document.querySelector('wc-chess-board,chess-board')?.dataset.sfctState,
-      exists: !!c, box: r && { w: Math.round(r.width), h: Math.round(r.height) },
-      display: c && getComputedStyle(c).display, vis: c && getComputedStyle(c).visibility,
-      op: c && getComputedStyle(c).opacity, cls: c && c.className,
-      html: c && c.outerHTML.slice(0, 200) };
-  }))));
+  'no result modal; badge=' + (await page.locator('#sfct-badge').textContent().catch(() => '(none)'))));
 const verdict = (await page.locator('#sfct-result').textContent()).trim();
 if (!/Stockfish won/.test(verdict) || !/by checkmate/.test(verdict)) fail('wrong verdict: ' + verdict);
 console.log('PASS 11: loss announced in a modal —', verdict.slice(0, 34));
@@ -309,7 +278,7 @@ await page.route('https://www.chess.com/game/live/castle', route =>
 await page.goto('https://www.chess.com/game/live/castle', { waitUntil: 'domcontentloaded' });
 await page.locator('#sfctplay-btn').waitFor({ timeout: 10000 }).catch(() => fail('no button on the castling page'));
 await page.locator('#sfctplay-btn').click();
-await page.waitForFunction(() => /Your move/.test(document.querySelector('wc-chess-board,chess-board')?.dataset.sfctState || ''),
+await page.waitForFunction(() => /Your move/.test(document.getElementById('sfct-badge')?.textContent || ''),
   null, { timeout: 60000 }).catch(() => fail('engine never ready on the castling page'));
 
 const box2 = await page.locator('#board').boundingBox();
@@ -328,7 +297,7 @@ if (!/\bwk\b/.test(kingCls || '')) fail('king did not castle to g1: ' + kingCls)
 if (!/\bwr\b/.test(rookCls || '')) fail('rook did not jump to f1: ' + rookCls);
 console.log('PASS 14: castled by dropping the king on the rook — king g1, rook f1');
 
-await page.waitForFunction(() => /Your move/.test(document.querySelector('wc-chess-board,chess-board')?.dataset.sfctState || ''),
+await page.waitForFunction(() => /Your move/.test(document.getElementById('sfct-badge')?.textContent || ''),
   null, { timeout: 60000 }).catch(() => fail('engine never replied after castling'));
 
 // 15. promotion offers the four pieces, and takes the one you pick
@@ -343,7 +312,7 @@ await page.locator('#board [data-sfct="sel"].square-17.highlight').waitFor({ tim
 await tap(1, 8);            // …to a8
 await page.locator('[data-sfct="promo"]').waitFor({ timeout: 5000 }).catch(async () => fail(
   'no promotion picker; ' + JSON.stringify(await page.evaluate(() => ({
-    state: document.querySelector('wc-chess-board,chess-board')?.dataset.sfctState,
+    badge: document.getElementById('sfct-badge')?.textContent,
     selected: [...document.querySelectorAll('#board [data-sfct="sel"]')].map(e => (e.className.match(/square-\d\d/) || [])[0]),
     a7: !!document.querySelector('#board [data-sfct="piece"].square-17'),
     a8: document.querySelector('#board [data-sfct="piece"].square-18')?.className || null,
@@ -352,18 +321,6 @@ await page.locator('[data-sfct="promo"]').waitFor({ timeout: 5000 }).catch(async
     promoBox: (() => { const e = document.querySelector('[data-sfct="promo"]');
       if (!e) return null; const r = e.getBoundingClientRect(); return { w: r.width, h: r.height }; })(),
   })))));
-// Hovering a choice tints it. Using the `background` shorthand for that also
-// resets background-image, and the piece on these cells is Chess.com's sprite
-// arriving through the `piece` class - so the piece you were about to pick
-// disappeared under the cursor.
-await page.locator('[data-sfct="promo"] > div').nth(1).hover();
-await page.waitForTimeout(250);
-const hovered = await page.locator('[data-sfct="promo"] > div').nth(1)
-  .evaluate(el => ({ img: el.style.backgroundImage, colour: el.style.backgroundColor }));
-if (hovered.img) fail('hovering wiped the sprite off the choice: background-image is now ' + hovered.img);
-if (!hovered.colour) fail('hovering did not tint the choice at all');
-console.log('PASS 15b: hovering a promotion choice tints it without erasing the piece');
-
 const offered = await page.$$eval('[data-sfct="promo"] > div', els =>
   els.map(e => (e.className.match(/\bw([qnrb])\b/) || [])[1]));
 if (offered.join('') !== 'qnrb') fail('promotion picker offered: ' + offered.join(','));
@@ -401,10 +358,10 @@ const blackSquares = () => page.$$eval('#board [data-sfct="piece"]', els =>
 await page.locator('#sfctplay-btn').click();
 // "Your move" only arrives once the engine has played, and the engine only plays
 // first when the selected ply says it is its turn.
-await page.waitForFunction(() => /Your move/.test(document.querySelector('wc-chess-board,chess-board')?.dataset.sfctState || ''),
+await page.waitForFunction(() => /Your move/.test(document.getElementById('sfct-badge')?.textContent || ''),
   null, { timeout: 60000 }).catch(async () => fail(
   'engine never moved first from the selected ply; badge=' +
-  (await state().catch(() => '(none)'))));
+  (await page.locator('#sfct-badge').textContent().catch(() => '(none)'))));
 // The scraped placement has every black piece on ranks 7 and 8, and every legal
 // black first move lands on rank 6 or 5. So "a black piece is off its home
 // ranks" means Black moved - whichever move the engine happened to pick, which
@@ -416,7 +373,7 @@ if (!blackOffHome.length) {
        'of the list, not from the selected ply');
 }
 console.log('PASS 16: started from the selected ply - Black moved first, as that position says');
-await stopGame();
+await page.locator('#sfct-badge').click();
 await page.waitForTimeout(300);
 
 // 17. when nothing on the page says whose turn it is, ask rather than guess.
@@ -435,9 +392,10 @@ await page.locator('#sfctplay-btn').waitFor({ timeout: 10000 }).catch(() => fail
 await page.locator('#sfctplay-btn').click();
 await page.locator('#sfct-ask').waitFor({ timeout: 10000 })
   .catch(() => fail('no side-to-move prompt on a page that cannot say whose turn it is'));
-if (await state()) fail('the game started before the question was answered');
+if (await page.locator('#sfct-badge').count() !== 0) fail('the game started before the question was answered');
 await page.getByRole('button', { name: /White/ }).click();
-await hasState('.').catch(() => fail('the extension never reported a state'));
+await page.waitForSelector('#sfct-badge', { timeout: 10000 })
+  .catch(() => fail('answering the prompt did not start the game'));
 console.log('PASS 17: asked whose move it was, and started once answered');
 
 
@@ -474,7 +432,7 @@ ${fenToDivs(placement)}</wc-chess-board>
   if (want) {
     await page.locator('#sfct-result').waitFor({ timeout: 90000 })
       .catch(async () => fail(`${name}: no verdict; badge=` +
-        (await state().catch(() => '(none)'))));
+        (await page.locator('#sfct-badge').textContent().catch(() => '(none)'))));
     const said = (await page.locator('#sfct-result').textContent()).trim();
     if (!want.test(said)) fail(`${name}: expected ${want}, got ${JSON.stringify(said.slice(0, 60))}`);
     // A position that was over before it started must not offer to replay itself.
@@ -483,12 +441,12 @@ ${fenToDivs(placement)}</wc-chess-board>
     await page.getByRole('button', { name: 'Back to Chess.com' }).click();
   } else {
     await page.waitForFunction(() => /Your move|thinking/.test(
-      document.querySelector('wc-chess-board,chess-board')?.dataset.sfctState || ''), null, { timeout: 60000 })
+      document.getElementById('sfct-badge')?.textContent || ''), null, { timeout: 60000 })
       .catch(() => fail(`${name}: never became playable`));
     await page.waitForTimeout(1200);
     if (await page.locator('#sfct-result').count())
       fail(`${name}: called a game that is still playable finished`);
-    await stopGame();
+    await page.locator('#sfct-badge').click();
   }
   await page.waitForTimeout(300);
 }
@@ -535,7 +493,7 @@ console.log('PASS 19: trigger docked to the move-list column, no modal needed, c
 
 await page.locator('#sfctplay-btn').click();
 // ?move=1 is White's first move, so Black is up: the engine plays before you do.
-await page.waitForFunction(() => /Your move/.test(document.querySelector('wc-chess-board,chess-board')?.dataset.sfctState || ''),
+await page.waitForFunction(() => /Your move/.test(document.getElementById('sfct-badge')?.textContent || ''),
   null, { timeout: 60000 }).catch(() => fail('engine never moved first from the ply named in the URL'));
 const movedBlack = (await page.$$eval('#board [data-sfct="piece"]', els => els
   .map(el => (el.className.match(/\bb[kqrbnp]\b/) || [])[0] + '@' + (el.className.match(/square-\d(\d)/) || [])[1])
@@ -543,7 +501,7 @@ const movedBlack = (await page.$$eval('#board [data-sfct="piece"]', els => els
   .filter(s => +s.split('@')[1] < 7);
 if (!movedBlack.length) fail('no black piece left its home ranks: ?move= was not read');
 console.log('PASS 19b: started from the ply in the URL - Black moved first');
-await stopGame();
+await page.locator('#sfct-badge').click();
 await page.waitForTimeout(500);
 // Stopping brings the trigger straight back, so the column is rightly shrunk
 // again. What has to hold is the pairing: shrunk exactly while the bar is there.
@@ -607,7 +565,7 @@ await page.route('https://www.chess.com/game/live/ring**', route =>
 await page.goto('https://www.chess.com/game/live/ring', { waitUntil: 'domcontentloaded' });
 await page.locator('#sfctplay-btn').waitFor({ timeout: 10000 }).catch(() => fail('no trigger on the ring page'));
 await page.locator('#sfctplay-btn').click();
-await page.waitForFunction(() => /Your move/.test(document.querySelector('wc-chess-board,chess-board')?.dataset.sfctState || ''),
+await page.waitForFunction(() => /Your move/.test(document.getElementById('sfct-badge')?.textContent || ''),
   null, { timeout: 60000 }).catch(() => fail('engine never ready on the ring page'));
 const rbox = await page.locator('#board').boundingBox();
 await page.mouse.click(rbox.x + 0.5 * rbox.width / 8, rbox.y + 7.5 * rbox.height / 8); // the a1 rook
@@ -625,211 +583,8 @@ if (Math.abs(parseFloat(ring.border) - 5) < 1)
 if (!marks.some(m => /(^| )hint/.test(m.cls) && parseFloat(m.pad) > 0))
   fail('the plain dots lost their padding: ' + JSON.stringify(marks));
 console.log(`PASS 21: capture ring ${ring.border} on a ${Math.round(rbox.width / 8)}px square (Chess.com's weight), dots padded`);
-await stopGame();
+await page.locator('#sfct-badge').click();
 await page.waitForTimeout(300);
-
-
-// 22. native mode: when Chess.com's board component is reachable, the extension
-// stops painting and asks THEIR board to play the moves. A fake game object
-// stands in for it, recording what it was asked to do - which is the contract
-// this depends on, and the one thing a fixture without a board component cannot
-// exercise (every check above runs the overlay fallback instead).
-const NATIVE = `<!doctype html><html><head>${CC_MARKER_CSS}</head><body style="margin:0">
-<div class="player-row-component player-row-top"><span class="cc-user-rating-white">(1450)</span></div>
-<div class="board-layout-sidebar"><div class="move-list">
-<div class="node white-move main-line-ply">x</div>
-<div class="node black-move main-line-ply">y</div></div></div>
-<wc-chess-board id="board" style="position:relative;display:block;width:640px;height:640px;background:#eee">
-${fenToDivs('4k3/8/8/8/8/8/4P3/4K3')}</wc-chess-board>
-<div class="game-result">1-0</div>
-<script>
-(() => {
-  const b = document.getElementById('board');
-  window.__log = { moves: [], continuation: 0, reset: 0 };
-  b.game = {
-    getFEN: () => '4k3/8/8/8/8/8/4P3/4K3 w - - 0 1',
-    getResult: () => '1-0',
-    isGameOver: () => true,
-    isCheck: () => false,
-    getTurn: () => 1,
-    getPlayingAs: () => 1,
-    getLegalMoves: () => [],
-    createContinuation: () => { window.__log.continuation++; return {}; },
-    move: (a) => { window.__log.moves.push(a); return {}; },
-    resetToMainLine: () => { window.__log.reset++; return {}; },
-  };
-})();
-<\/script></body></html>`;
-await page.route('https://www.chess.com/game/live/native**', route =>
-  route.fulfill({ status: 200, contentType: 'text/html', body: NATIVE }));
-await page.goto('https://www.chess.com/game/live/native', { waitUntil: 'domcontentloaded' });
-await page.locator('#sfctplay-btn').waitFor({ timeout: 10000 }).catch(() => fail('no trigger on the native page'));
-await page.locator('#sfctplay-btn').click();
-await page.waitForFunction(() => /Your move/.test(document.querySelector('wc-chess-board,chess-board')?.dataset.sfctState || ''),
-  null, { timeout: 60000 }).catch(() => fail('engine never ready in native mode'));
-await page.waitForTimeout(600);
-
-const nat = await page.evaluate(() => ({
-  ours: document.querySelectorAll('[data-sfct="piece"]').length,
-  theirs: [...document.querySelectorAll('#board [class*="piece"]')]
-    .filter(e => !e.hasAttribute('data-sfct') && getComputedStyle(e).display !== 'none').length,
-  log: window.__log,
-}));
-// Native RENDERING is off: the bridge reads the position, we draw it. Their
-// board is left completely alone - no continuation branched, no move played on
-// it - which is also why their game can never be disturbed by a continuation.
-if (nat.ours !== 0) fail(`we painted ${nat.ours} pieces in native mode; their board should be drawing`);
-if (nat.theirs < 3) fail(`Chess.com's own pieces were hidden in native mode (${nat.theirs} visible)`);
-if (nat.log.continuation !== 1) fail('the continuation was not branched off: ' + JSON.stringify(nat.log));
-console.log('PASS 22: native mode - we paint nothing,', nat.theirs, 'of their pieces stand, continuation branched');
-
-// Nothing of ours may be a CHILD of anything Chess.com renders with Vue. An
-// unexpected child makes their next patch throw "insertBefore … not a child of
-// this node" and takes the board component down with it: pieces stop moving
-// and the layout collapses. This project has made that mistake three times -
-// their game-over modal, their result card, and their player row.
-const intruders = await page.evaluate(() => {
-  const hosts = ['[class*="player"]', '[class*="move-list"]', '[class*="game-over"]',
-                 '[class*="board-layout"]', '[class*="sidebar"]'];
-  const out = [];
-  for (const h of hosts) {
-    for (const host of document.querySelectorAll(h)) {
-      if (host.hasAttribute('data-sfct')) continue;
-      for (const ours of host.querySelectorAll('[data-sfct]')) {
-        // The board is the one place we are allowed to draw into.
-        if (ours.closest('wc-chess-board, chess-board')) continue;
-        out.push(h + ' contains ' + ours.getAttribute('data-sfct') + '#' + (ours.id || '?'));
-      }
-    }
-  }
-  return [...new Set(out)];
-});
-if (intruders.length) fail('we inserted nodes into Chess.com\'s own DOM: ' + intruders.join(', '));
-console.log('PASS 22b: nothing of ours is a child of anything Chess.com renders');
-
-// A move has to reach THEIR board, with from and to.
-const nbox = await page.locator('#board').boundingBox();
-const nsq = (f, r) => ({ x: nbox.x + (f - 0.5) * nbox.width / 8, y: nbox.y + (8 - r + 0.5) * nbox.height / 8 });
-await page.mouse.click(nsq(5, 2).x, nsq(5, 2).y); await page.waitForTimeout(700);
-// Picking a piece up must not hide it. The selected square is marked with a
-// node of our own, and appending it last painted it OVER the piece - which
-// vanished until the move was played - while the `.highlight` base rule is a
-// solid yellow the theme always overrides.
-const sel = await page.evaluate(() => {
-  const b = document.getElementById('board');
-  const kids = [...b.children];
-  const mark = b.querySelector('[data-sfct="sel"]');
-  // Ours: in overlay mode Chess.com's own are hidden under our style, so
-  // theirs being display:none is correct rather than a vanished piece.
-  const piece = [...b.querySelectorAll('[class*="piece"]')].find(e => e.className.includes('square-52'));
-  return { has: !!mark, markAt: kids.indexOf(mark), pieceAt: kids.indexOf(piece),
-    pieceShown: !!piece && getComputedStyle(piece).display !== 'none',
-    opacity: mark ? getComputedStyle(mark).opacity : null,
-    paint: mark ? getComputedStyle(mark).backgroundColor : null };
-});
-if (!sel.has) fail('nothing marked the square you picked up from');
-if (!sel.pieceShown) fail('the piece vanished when it was picked up');
-if (!(sel.markAt < sel.pieceAt))
-  fail(`the marker is painted over the piece (marker at ${sel.markAt}, piece at ${sel.pieceAt})`);
-// Translucent either way round: an opacity below 1, or an alpha in the colour.
-// Chess.com's --color-bg-selected carries its own alpha, so the opacity
-// property stays at 1 while the paint is see-through.
-const alpha = (sel.paint || '').startsWith('rgba') ? parseFloat(sel.paint.split(',')[3]) : 1;
-if (parseFloat(sel.opacity) >= 1 && alpha >= 1)
-  fail(`the marker is opaque, so it hides what it marks: ${sel.paint} at ${sel.opacity}`);
-console.log(`PASS 22c: picked-up piece still shown, marker under it at ${sel.markAt}, paint ${sel.paint}`);
-
-// Right-click is Chess.com's own annotation tool - arrows and coloured
-// squares. Our pointer handlers run on the body in the CAPTURE phase, so
-// preventing every button ate those before their board ever saw them.
-await page.evaluate(() => {
-  window.__rc = null;
-  document.getElementById('board').addEventListener('pointerdown', (e) => {
-    if (e.button === 2) window.__rc = { reached: true, prevented: e.defaultPrevented };
-  });
-});
-await page.mouse.click(nsq(4, 4).x, nsq(4, 4).y, { button: 'right' });
-await page.waitForTimeout(400);
-const rc = await page.evaluate(() => window.__rc);
-if (!rc || !rc.reached) fail('a right-click never reached their board: ' + JSON.stringify(rc));
-if (rc.prevented) fail('a right-click reached their board already prevented - no arrows, no square colours');
-// …and it must not have been mistaken for a move.
-const afterRight = await page.evaluate(() => window.__log.moves.length);
-if (afterRight !== 0) fail('a right-click was taken for a move: ' + afterRight);
-console.log('PASS 22d: right-click reaches their board unprevented, and is not taken for a move');
-await page.mouse.click(nsq(5, 4).x, nsq(5, 4).y); await page.waitForTimeout(1500);
-const played = await page.evaluate(() => window.__log.moves);
-if (!played.some(m => m.from === 'e2' && m.to === 'e4'))
-  fail('the move never reached their board: ' + JSON.stringify(played));
-console.log('PASS 22e: the move went to their board -', JSON.stringify(played[0]));
-
-// …and stopping hands the real game back.
-await stopGame();
-await page.waitForTimeout(800);
-const reset = await page.evaluate(() => window.__log.reset);
-if (!reset) fail('resetToMainLine was never called - the variation would be left on the game');
-console.log('PASS 22f: stopping dropped the variation and restored the main line');
-
-
-// 23. the board component is there, but it will not take our moves - its own
-// result still reads "*", so the bridge's fair-play gate refuses everything. A
-// refusal must cost the native LOOK, never the game: the extension has to notice
-// and draw the position itself. Before this it left a board that never changed,
-// with nothing in the console to say why, which reads as the whole thing being
-// broken.
-const REFUSED = `<!doctype html><html><head>${CC_MARKER_CSS}</head><body style="margin:0">
-<div class="player-row-component player-row-top"><span class="cc-user-rating-white">(1450)</span></div>
-<div class="board-layout-sidebar"><div class="move-list">
-<div class="node white-move main-line-ply">x</div>
-<div class="node black-move main-line-ply">y</div></div></div>
-<wc-chess-board id="board" style="position:relative;display:block;width:640px;height:640px;background:#eee">
-${fenToDivs('4k3/8/8/8/8/8/4P3/4K3')}</wc-chess-board>
-<div class="game-result">1-0</div>
-<script>
-(() => {
-  const b = document.getElementById('board');
-  window.__log = { moves: [], continuation: 0, reset: 0 };
-  b.game = {
-    getFEN: () => '4k3/8/8/8/8/8/4P3/4K3 w - - 0 1',
-    // The DOM says the game is over; their own game object does not agree.
-    getResult: () => '*',
-    isGameOver: () => false, isCheck: () => false,
-    getTurn: () => 1, getPlayingAs: () => 1, getLegalMoves: () => [],
-    createContinuation: () => { window.__log.continuation++; return {}; },
-    move: (a) => { window.__log.moves.push(a); return {}; },
-    resetToMainLine: () => { window.__log.reset++; return {}; },
-  };
-})();
-<\/script></body></html>`;
-await page.route('https://www.chess.com/game/live/refused**', route =>
-  route.fulfill({ status: 200, contentType: 'text/html', body: REFUSED }));
-await page.goto('https://www.chess.com/game/live/refused', { waitUntil: 'domcontentloaded' });
-await page.locator('#sfctplay-btn').waitFor({ timeout: 10000 }).catch(() => fail('no trigger on the refused page'));
-await page.locator('#sfctplay-btn').click();
-await page.waitForFunction(() => /Your move/.test(document.querySelector('wc-chess-board,chess-board')?.dataset.sfctState || ''),
-  null, { timeout: 60000 }).catch(() => fail('engine never ready on the refused page'));
-await page.waitForTimeout(1200);
-const fb = await page.evaluate(() => ({
-  ours: document.querySelectorAll('[data-sfct="piece"]').length,
-  asked: window.__log.continuation,
-  played: window.__log.moves.length,
-}));
-// The gate has to have held: their board was never touched.
-if (fb.asked !== 0 || fb.played !== 0)
-  fail('the gate let something through on a game with no result: ' + JSON.stringify(fb));
-if (fb.ours < 3) fail(`refused by their board and we drew nothing - a dead board (${fb.ours} pieces)`);
-console.log('PASS 23: refused by their board, so we draw it -', fb.ours, 'pieces, their board untouched');
-
-// …and the game still plays.
-const rbox2 = await page.locator('#board').boundingBox();
-const rsq = (f, r) => ({ x: rbox2.x + (f - 0.5) * rbox2.width / 8, y: rbox2.y + (8 - r + 0.5) * rbox2.height / 8 });
-await page.mouse.click(rsq(5, 2).x, rsq(5, 2).y); await page.waitForTimeout(500);
-await page.mouse.click(rsq(5, 4).x, rsq(5, 4).y); await page.waitForTimeout(1500);
-const moved = await page.$eval('#board', b => !!b.querySelector('[data-sfct="piece"].square-54'));
-if (!moved) fail('the pawn did not move on our own board either');
-console.log('PASS 23b: and the pieces move on our board');
-await stopGame();
-await page.waitForTimeout(400);
 
 
 console.log('\nALL CHECKS PASSED');

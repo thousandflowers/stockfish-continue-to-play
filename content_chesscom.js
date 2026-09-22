@@ -25,28 +25,6 @@ const PACE_MAX_MS = 1600;   // past this a reply stops feeling like thinking and
 const PACE_OF_GAME = 0.7;   // a continuation runs brisker than the game it came from
 const PACE_DEFAULT_MS = 650;
 const PACE_SAMPLES = 3; // how many of your own recent moves the pace follows
-
-// Let Chess.com's own board render the continuation, by playing our moves on it
-// through the bridge. OFF.
-//
-// The bridge READS beautifully: getFEN gives the displayed position with real
-// castling rights, a real en-passant square and the right side to move, and
-// getResult says outright whether a game has finished. All of that is kept.
-//
-// Driving their board is the part that does not hold up. On a review page
-// game.move() behaves in ways this extension cannot predict — the view does not
-// follow the move, moves land in variations, the animation jumps — and each fix
-// for one of those uncovered the next. A continuation where the pieces do not
-// visibly move is worse than one drawn in our own overlay, which has worked
-// since 3.3.0.
-//
-// One line to turn it back on, once that behaviour is understood well enough to
-// be tested rather than discovered.
-// Back ON. It was switched off after "from the engine's first move nothing
-// shows" — but that report came BEFORE the banner that was eating clicks was
-// removed and before moveForward() was used to bring the view to the move.
-// Turning it off without re-testing it against those two fixes was premature.
-const NATIVE_RENDERING = true;
 const ENGINE_INIT_TIMEOUT_MS = 15000;
 const REFRESH_INTERVAL_MS = 1000;
 const POLL_INTERVAL_MS = 200;
@@ -72,30 +50,12 @@ let chesscomState = null;
 // case, which is exactly what shipped before, so the bridge can only add.
 let pageState = null;
 
-let _cmdId = 0;
-const _pending = new Map();
-
 window.addEventListener('message', (e) => {
   if (e.source !== window) return;
   const d = e.data;
-  if (!d) return;
-  if (d.__sfct === 'page-state') { pageState = d.state || null; return; }
-  if (d.__sfct === 'cmd-reply') { _pending.get(d.id)?.({ ok: d.ok, value: d.value }); _pending.delete(d.id); }
+  if (!d || d.__sfct !== 'page-state') return;
+  pageState = d.state || null;
 });
-
-// Ask the page world to do something. The bridge refuses anything that changes
-// the board unless Chess.com's own game reports a result, so this asking is only
-// ever half of the decision — the other half is the gate that let the trigger
-// appear in the first place.
-function pageCmd(op, args) {
-  if (!pageState) return Promise.resolve({ ok: false, value: 'nessun bridge' });
-  const id = ++_cmdId;
-  return new Promise((resolve) => {
-    _pending.set(id, resolve);
-    setTimeout(() => { if (_pending.delete(id)) resolve({ ok: false, value: 'timeout' }); }, 2500);
-    window.postMessage({ __sfct: 'cmd', id, op, args }, location.origin);
-  });
-}
 
 // Their board says which colour you are playing. The shape is not documented,
 // so only values we actually recognise are honoured — a wrong colour hands you
@@ -293,11 +253,7 @@ function finishMateProbe() {
     return;
   }
   const youLost = side === st.playerSide;
-  if (score === 'mate') {
-    endGame(youLost ? 'Stockfish won' : 'You won!', 'by checkmate',
-      { winner: side === 'w' ? 'b' : 'w' });
-    return;
-  }
+  if (score === 'mate') { endGame(youLost ? 'Stockfish won' : 'You won!', 'by checkmate'); return; }
   if (score === 'draw') { endGame('Draw', 'by stalemate'); return; }
   endGame('Game over', 'no legal moves left');
 }
@@ -322,29 +278,24 @@ function removeGameOverModal() {
   if (document.getElementById('sfct-modal-blocker')) return;
   const s = document.createElement('style');
   s.id = 'sfct-modal-blocker';
-  // :not([data-sfct]) on every one of them. Our own result card wears Chess.com's
-  // modal classes so it matches their design exactly — without this it would be
-  // hidden by the very rule that hides theirs.
   s.textContent = [
     '.game-over-modal-shell', '.game-over-modal-component', '.game-over-modal-content',
     '.game-over-buttons-component', '.game-over-container', '[data-cy="game-over-dialog"]',
     '.game-result-component', '[class*="game-over-modal"]', '.board-modal-overlay',
-  ].map(sel => sel + ':not([data-sfct])').join(',') + '{display:none!important}';
+  ].join(',') + '{display:none!important}';
   document.head.appendChild(s);
 }
 
 // ── Show / hide the inline board ─────────────────────────────────────────────
-function injectBoardStyle(native) {
+function injectBoardStyle() {
   if (document.getElementById('sfct-board-style')) return;
   const bs = document.createElement('style');
   bs.id = 'sfct-board-style';
   bs.textContent = [
-    // Only when we are drawing. In native mode Chess.com keeps its own pieces on
-    // the board and plays our moves itself, so there is nothing to hide.
-    ...(native ? [] : [
-      'wc-chess-board [class*="piece"]:not([data-sfct]),chess-board [class*="piece"]:not([data-sfct]){display:none!important}',
-      '[data-sfct="piece"]{transition:transform var(--move-animation-duration,180ms) ease-out}',
-    ]),
+    // Chess.com's own pieces are hidden, never removed: dropping this style tag on
+    // stop hands the board straight back instead of leaving it blank.
+    'wc-chess-board [class*="piece"]:not([data-sfct]),chess-board [class*="piece"]:not([data-sfct]){display:none!important}',
+    '[data-sfct="piece"]{transition:transform var(--move-animation-duration,180ms) ease-out}',
     // The king in check. Chess.com draws this with a VFX layer whose artwork is
     // not reachable from a class, so this is their red radial glow instead.
     //
@@ -373,39 +324,15 @@ function engineStrength(setting) {
   return { label: String(rating), uciElo: eloToUCIElo(rating) };
 }
 
-// Turn the opponent's own player card into Stockfish, so who you are playing is
-// where you already look for it rather than on a strip of our own.
-//
-// Found by DATA, not by class names: inside the opponent's row, the leaf that
-// reads as a rating is the rating, and the first other leaf carrying letters is
-// the name. Chess.com has renamed everything about that row three times in this
-// project's history; what it holds has not changed.
-//
-// Returns a function that puts every word back exactly as it was.
-function labelOpponentAsEngine(name, rating) {
+// Rename the opponent on the board so it is obvious who you are now playing.
+// Returns a function that puts the original name back.
+function labelOpponentAsEngine(text) {
   const row = opponentRow();
-  if (!row) return null;
-  const leaves = [...row.querySelectorAll('*')].filter(el => !el.children.length && (el.textContent || '').trim());
-  const ratingEl = leaves.find(el => RATING_RE.test((el.textContent || '').trim()));
-  const nameEl = leaves.find(el => el !== ratingEl && /[a-z]/i.test((el.textContent || '').trim()));
-  const undo = [];
-  const set = (el, text) => {
-    if (!el) return;
-    const was = el.textContent;
-    undo.push(() => { try { el.textContent = was; } catch (_) {} });
-    // Keep their own parenthesised shape when that is how the rating is written.
-    el.textContent = text;
-  };
-  if (nameEl && nameEl === ratingEl) {
-    set(nameEl, rating ? `${name} (${rating})` : name);
-    return () => undo.forEach(f => f());
-  }
-  set(nameEl, name);
-  if (ratingEl && rating) {
-    const parenthesised = /^\(.*\)$/.test((ratingEl.textContent || '').trim());
-    set(ratingEl, parenthesised ? `(${rating})` : String(rating));
-  }
-  return undo.length ? () => undo.forEach(f => f()) : null;
+  const el = row?.querySelector('[class*="username"], [class*="tagline"], [class*="name"]');
+  if (!el) return null;
+  const original = el.textContent;
+  el.textContent = text;
+  return () => { try { el.textContent = original; } catch (_) {} };
 }
 
 function showChesscomBoard(fen, color, strengthSetting) {
@@ -428,17 +355,6 @@ function showChesscomBoard(fen, color, strengthSetting) {
       startFen: fen, moves: [], boardData: fenToBoard(fen),
       selectedSq: null, playerSide, engineSide, sideToMove, board,
       strengthSetting, finished: false,
-      // Chess.com draws the game when we can reach their board.
-      native: NATIVE_RENDERING && !!pageState,
-      // How far back through the move list this position sits. A rematch has to
-      // come back here: resetToMainLine() lands at the END of the game, so
-      // branching straight after it restarts from the finish — which is over
-      // already, and the new game ended the instant it began.
-      pliesBack: (() => {
-        const total = plyNodes().length;
-        const at = plyFromUrl();
-        return at && total ? Math.max(0, total - at) : 0;
-      })(),
       // Seconds per move in the game just played, when its clocks are on the page.
       gamePaceMs: (averageMoveSeconds() || 0) * 1000,
       yourPaces: [],
@@ -453,18 +369,17 @@ function showChesscomBoard(fen, color, strengthSetting) {
     chesscomState.seen.set(
       positionKey(chesscomState.boardData, sideToMove, fenCastling, fenEp), 1);
 
-    injectBoardStyle(chesscomState.native);
-    // Branch off the position being shown: our moves then land in a variation
-    // beside the real game, and resetToMainLine() on stop discards it and
-    // hands the game back exactly as it was.
-    if (chesscomState.native) {
-      pageCmd('continuation').then(r => { if (!r.ok) fallBackToOverlay(r.value); });
-    }
+    injectBoardStyle();
     syncBoardToState();
     attachPointerHandlers();
     startRefreshTimer();
-    chesscomState._restoreOpponentName = labelOpponentAsEngine('Stockfish', strength.label);
-    showStatusBadge('loading engine…');
+    chesscomState._restoreOpponentName = labelOpponentAsEngine(`Stockfish (${strength.label})`);
+    showStatusBadge(`Stockfish ${strength.label} · loading engine…`);
+    // Say plainly that a new game has started — the board looks the same as the
+    // one that just ended, so without this it is not obvious anything changed.
+    showBanner(`♟ New game vs Stockfish (${strength.label}) - you play ` +
+               (playerSide === 'w' ? 'White' : 'Black'), 6000);
+
     initEngine().then(() => {
       if (session !== sessionId || !chesscomState) return; // stopped or restarted while loading
       if (strength.uciElo) {
@@ -472,6 +387,7 @@ function showChesscomBoard(fen, color, strengthSetting) {
         postCmd(`setoption name UCI_Elo value ${strength.uciElo}`);
       }
       postCmd(enginePosition());
+      chesscomState.engineLabel = strength.label;
       if (sideToMove === engineSide) engineThink();
       else { updateStatus('Your move'); requestLegalMoves(); }
     }).catch(e => {
@@ -487,8 +403,6 @@ function showChesscomBoard(fen, color, strengthSetting) {
 }
 
 function hideChesscomBoard() {
-  // Drop our variation and put their move list back on the real game.
-  if (chesscomState?.native) pageCmd('reset');
   if (chesscomState?._ptrCleanup) chesscomState._ptrCleanup();
   if (chesscomState?._refreshTimer) clearInterval(chesscomState._refreshTimer);
   releaseColumnFoot();
@@ -498,10 +412,7 @@ function hideChesscomBoard() {
   // Dropping this un-hides Chess.com's own pieces again.
   document.getElementById('sfct-board-style')?.remove();
   chesscomState?._restoreOpponentName?.();
-  if (chesscomState?.board) {
-    chesscomState.board.style.touchAction = '';
-    chesscomState.board.removeAttribute('data-sfct-state');
-  }
+  if (chesscomState?.board) chesscomState.board.style.touchAction = '';
   // Drop our overlay pieces/dots so the board shows Chess.com's again.
   // _sfctCleanup first: a card removed without it leaves its resize/scroll
   // listeners on window, holding the detached node alive.
@@ -540,18 +451,14 @@ function dismissResult() {
   hideChesscomBoard();
 }
 
-async function rematch() {
+function rematch() {
   const st = chesscomState;
   if (!st) return;
-  const { startFen, playerSide, strengthSetting, native, pliesBack } = st;
+  const { startFen, playerSide, strengthSetting } = st;
   const card = document.getElementById('sfct-result');
   card?._sfctCleanup?.();
   card?.remove();
-  hideChesscomBoard(); // this is what sends resetToMainLine
-  // …which leaves their board at the end of the real game. Walk it back to where
-  // the continuation began before branching again. Messages are handled in the
-  // order they are posted, so this lands after the reset.
-  if (native && pliesBack > 0) await pageCmd('backward', { n: pliesBack });
+  hideChesscomBoard();
   showChesscomBoard(startFen, playerSide === 'w' ? 'white' : 'black', strengthSetting);
 }
 
@@ -581,14 +488,6 @@ function makePieceNode(pc) {
   return el;
 }
 
-// Chess.com's own token for a selected square. Copying the paint off whichever
-// highlight happened to be first on the board looked clever and was not: on a
-// review page the first one is an annotation — a red blunder, a yellow
-// inaccuracy — so the square you picked up came out in whatever colour that
-// move had been graded. --color-bg-selected means exactly this and nothing
-// else.
-const SELECTED_PAINT = { background: 'var(--color-bg-selected, rgba(255,255,255,.4))', opacity: '1' };
-
 // Restart Chess.com's grow / wiggle / shrink on the checked king.
 function replayCheck() {
   const el = document.querySelector('[data-sfct="check"] .sfct-check-el');
@@ -596,23 +495,6 @@ function replayCheck() {
   el.style.animation = 'none';
   void el.offsetWidth;
   el.style.animation = '';
-}
-
-// Their board would not take a move — the bridge's own result gate said no, or
-// the component went away under us. Draw the game ourselves from here instead of
-// leaving a board that never changes: a refusal must cost the native LOOK, never
-// the game. Silence was the whole failure: pieces simply stopped moving, with
-// nothing in the console to say why.
-function fallBackToOverlay(why) {
-  const st = chesscomState;
-  if (!st || !st.native) return;
-  st.native = false;
-  warn('page bridge refused (' + why + ') \u2014 drawing the board ourselves');
-  document.getElementById('sfct-board-style')?.remove();
-  injectBoardStyle(false);
-  st._flipped = undefined; // force every piece to be placed again
-  syncBoardToState();
-  showBanner('Chess.com would not take the moves \u2014 playing on our own board.', 5000);
 }
 
 function syncBoardToState() {
@@ -635,7 +517,6 @@ function syncBoardToState() {
       el.style.transform = `translate(${(flipped ? 7 - f : f) * 100}%,${(flipped ? r - 1 : 8 - r) * 100}%)`;
     };
 
-    if (!st.native) {
     const nodes = new Map();
     board.querySelectorAll(':scope > [data-sfct="piece"]').forEach(el => nodes.set(el.dataset.sq, el));
 
@@ -663,11 +544,6 @@ function syncBoardToState() {
       nodes.set(a.sq, el);
     }
 
-    }
-
-    // The checked king. Chess.com plays its own effect in native mode — the
-    // real one, an image asset on a VFX layer, not this approximation.
-    if (!st.native) {
     // A king in check keeps the red square while the check stands. The node is
     // REUSED, never rebuilt: recreating it restarts Chess.com's grow/wiggle, so
     // it replayed on every re-render — picking a piece up made the king twitch.
@@ -688,8 +564,6 @@ function syncBoardToState() {
         place(mark, checkedKing);
         replayCheck();
       }
-    }
-
     }
 
     // The square you picked up from, and where it can go. All three wear
@@ -713,20 +587,9 @@ function syncBoardToState() {
       const sel = document.createElement('div');
       sel.setAttribute('data-sfct', 'sel');
       sel.className = 'highlight';
-      // Their own last-move highlight is on the board while you play, so its
-      // computed paint is copied off it. The `.highlight` base rule is a solid
-      // rgb(255,255,51) that nobody ever sees on a real board — the theme
-      // overrides it to a translucent green, the same way it overrides the
-      // capture ring's declared 5px. Taking the class alone gave us the raw
-      // yellow, opaque, which is not their colour and hides what it marks.
-      const paint = SELECTED_PAINT;
-      // FIRST child, not last: Chess.com's highlights sit under the pieces and
-      // ours has to as well. Appended at the end it painted OVER the piece and
-      // the piece you had just picked up vanished until the move was made.
-      sel.style.cssText = SQUARE_BOX +
-        `background:${paint.background};opacity:${paint.opacity}`;
+      sel.style.cssText = SQUARE_BOX + 'z-index:2';
       place(sel, selectedSq);
-      board.insertBefore(sel, board.firstChild);
+      board.appendChild(sel);
     }
     const squarePx = board.getBoundingClientRect().width / 8;
     for (const dest of dests || []) {
@@ -739,17 +602,6 @@ function syncBoardToState() {
       place(dot, dest);
       board.appendChild(dot);
     }
-    // An invisible record of what this render actually did. The decision that
-    // matters — are we drawing, or is Chess.com — lives in the isolated world
-    // where a page console cannot see it, and not being able to read it is what
-    // made a blank board impossible to diagnose from the outside.
-    board.setAttribute('data-sfct-debug', JSON.stringify({
-      native: !!st.native,
-      men: Object.keys(boardData).length,
-      drawn: board.querySelectorAll(':scope > [data-sfct="piece"]').length,
-      hiding: !!document.getElementById('sfct-board-style')?.textContent.includes('display:none'),
-      bridge: !!pageState,
-    }));
   } finally { _sfSyncing = false; }
 }
 
@@ -768,13 +620,7 @@ function attachPointerHandlers() {
     const r = b.getBoundingClientRect();
     return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
   };
-  // Only the primary button is ours. Right-click is how Chess.com draws arrows
-  // and colours squares, and capturing every button ate those before their
-  // board ever saw them — the annotation tools simply stopped existing while a
-  // continuation was on.
-  const notOurs = (e) => e.button !== undefined && e.button !== 0;
   const onDown = (e) => {
-    if (notOurs(e)) return;
     if (e.target?.closest?.('#sfct-badge, #sfctplay-banner, #sfctplay-btn, #sfct-result, #sfct-ask')) return;
     if (e.target?.closest?.('[data-sfct="promo"]')) return; // the picker handles its own clicks
     if (cancelPromotion()) { e.preventDefault(); e.stopPropagation(); return; }
@@ -786,7 +632,6 @@ function attachPointerHandlers() {
     e.preventDefault(); e.stopPropagation();
   };
   const onUp = (e) => {
-    if (notOurs(e)) return;
     if (!dragStart) return;
     const b = currentBoard();
     if (!b || !inside(b, e)) { dragStart = null; return; }
@@ -819,19 +664,8 @@ function startRefreshTimer() {
       return;
     }
     // A Chess.com re-render can wipe our overlay children without replacing the
-    // board node — put them back. Not in native mode: there are never any of
-    // our pieces there, so this test is always true and would rebuild the
-    // markers once a second for nothing.
-    //
-    // There used to be more here: if redrawing still left no pieces, it dropped
-    // the style hiding Chess.com's and switched to native. That was meant to
-    // rescue a blank board, and it made things worse — native sends the move to
-    // the bridge, the bridge refuses it, the refusal falls back to overlay,
-    // overlay finds no pieces, and round it goes, adding and removing the
-    // hiding style once a second. The pieces you moved never appeared. A rescue
-    // that flips the mode it is running in cannot be a rescue; whatever leaves
-    // the board empty has to be found and fixed, not papered over.
-    if (!chesscomState.native && !cur.querySelector(':scope > [data-sfct="piece"]')) syncBoardToState();
+    // board node — put them back.
+    if (!cur.querySelector(':scope > [data-sfct="piece"]')) syncBoardToState();
   }, REFRESH_INTERVAL_MS);
 }
 
@@ -875,12 +709,8 @@ function askPromotion(to, side, onPick) {
     cell.className = `piece ${side}${p}`;
     cell.style.cssText = 'position:relative;width:100%;height:25%;left:auto;top:auto;' +
       'transform:none;background-size:100% 100%;cursor:pointer';
-    // backgroundColor, never the `background` shorthand: the shorthand resets
-    // background-image too, and the piece these cells show comes from Chess.com's
-    // sprite through the `piece` class — so hovering one made the piece you were
-    // about to choose disappear.
-    cell.onmouseenter = () => { cell.style.backgroundColor = 'rgba(0,0,0,.08)'; };
-    cell.onmouseleave = () => { cell.style.backgroundColor = ''; };
+    cell.onmouseenter = () => { cell.style.background = 'rgba(0,0,0,.08)'; };
+    cell.onmouseleave = () => { cell.style.background = ''; };
     cell.onclick = (e) => { e.preventDefault(); e.stopPropagation(); col.remove(); onPick(p); };
     col.appendChild(cell);
   }
@@ -994,10 +824,6 @@ function makePlayerMove(from, to, promo) {
   st.selectedSq = null;
   st.sideToMove = st.engineSide;
   recordMove(st, res.moved);
-  if (st.native) {
-    pageCmd('move', { from, to, promotion: promo || undefined })
-      .then(r => { if (!r.ok) fallBackToOverlay(r.value); });
-  }
   syncBoardToState();
   postCmd(enginePosition());
   engineThink();
@@ -1015,11 +841,6 @@ function onEngineMove(uci) {
   st.moves.push(uci);
   st.sideToMove = st.playerSide;
   recordMove(st, res.moved);
-  if (st.native) {
-    pageCmd('move', { from: uci.slice(0, 2), to: uci.slice(2, 4),
-      promotion: uci.length > 4 ? uci[4] : undefined })
-      .then(r => { if (!r.ok) fallBackToOverlay(r.value); });
-  }
   st.turnStart = Date.now();
   syncBoardToState();
   updateStatus('Your move');
@@ -1028,22 +849,31 @@ function onEngineMove(uci) {
 }
 
 // ── Status badge & banner ────────────────────────────────────────────────────
-// No badge, no pill, no strip. Who you are playing is on the opponent's own
-// player card, which reads Stockfish for as long as the game runs; the state
-// itself is kept as an attribute on the board rather than drawn anywhere.
-// Every version of this we painted got in the way of something: it sat on the
-// clock, it docked over their controls, it floated in a corner.
 function showStatusBadge(text) {
   document.getElementById('sfct-badge')?.remove();
   document.getElementById('sfct-result')?.remove();
-  updateStatus(text);
+  const badge = document.createElement('div');
+  badge.id = 'sfct-badge';
+  Object.assign(badge.style, {
+    position: 'fixed', top: '12px', right: '12px', zIndex: '999999',
+    background: 'rgba(0,0,0,.7)', color: '#ddd', padding: '5px 10px',
+    borderRadius: '6px', fontSize: '12px', fontFamily: '-apple-system,sans-serif',
+    backdropFilter: 'blur(4px)', cursor: 'pointer',
+  });
+  badge.title = 'Click to stop playing vs Stockfish';
+  const span = document.createElement('span');
+  span.id = 'sfct-badge-text';
+  span.textContent = '♟ ' + text;
+  badge.appendChild(span);
+  badge.onclick = dismissResult;
+  document.body.appendChild(badge);
 }
 
-// An attribute on their board, not an element of ours: nothing to overlap, and
-// still readable by anything that wants to know what the extension is doing.
-// Cleared on teardown with the rest.
 function updateStatus(text) {
-  chesscomState?.board?.setAttribute('data-sfct-state', text);
+  const el = document.getElementById('sfct-badge-text');
+  if (!el) return;
+  const who = chesscomState?.engineLabel ? `Stockfish ${chesscomState.engineLabel} · ` : '';
+  el.textContent = '♟ ' + who + text;
 }
 
 function ensureAnimStyle() {
@@ -1067,15 +897,14 @@ function showBanner(text, ms) {
     fontFamily: '-apple-system,BlinkMacSystemFont,sans-serif', fontSize: '18px',
     fontWeight: '600', boxShadow: '0 8px 32px rgba(0,0,0,.7)', cursor: 'pointer',
     animation: '_sfctin .28s ease',
-    // Never intercepts a click. This banner sat over the top of the page and
-    // our pointer handlers skip anything inside it, so until it was dismissed
-    // it swallowed every click that landed under it — the first move of a
-    // continuation simply did not register.
-    pointerEvents: 'none',
   });
   const msg = document.createElement('span');
   msg.textContent = text;
-  el.append(msg);
+  const hint = document.createElement('small');
+  hint.style.cssText = 'opacity:.5;font-size:11px;margin-left:6px';
+  hint.textContent = '(click to close)';
+  el.append(msg, hint);
+  el.onclick = () => el.remove();
   document.body.appendChild(el);
   setTimeout(() => el.remove(), ms || BANNER_TIMEOUT_MS);
 }
@@ -1094,103 +923,52 @@ function centreOnBoard(el) {
   el.style.transform = 'translate(-50%,-50%)';
 }
 
-// Chess.com's own button, not a copy of one. Their classes carry the shape, the
-// colour, the type and the states, and they follow the theme you have chosen.
+// A full-width button in Chess.com's dialog style.
 function cardButton(text, primary) {
   const b = document.createElement('button');
-  b.setAttribute('data-sfct', 'card');
-  b.className = 'cc-button-component cc-button-xx-large ' +
-    (primary ? 'cc-button-primary cc-bg-primary' : 'cc-button-secondary');
   b.textContent = text;
-  b.style.width = '100%';
-  b.style.boxSizing = 'border-box';
-  b.style.minWidth = '0';
-  // cc-button-primary brings its own green gradient. The secondary paints
-  // nothing outside their own containers, so it gets their input surface token
-  // rather than a colour invented here.
-  if (!primary) b.style.backgroundColor = 'var(--color-bg-input, rgba(255,255,255,.09))';
+  Object.assign(b.style, {
+    width: '100%', minHeight: '44px', border: 'none', borderRadius: '8px',
+    fontSize: '15px', fontWeight: '700', cursor: 'pointer',
+    background: primary ? '#81b64c' : 'rgba(255,255,255,.09)',
+    color: primary ? '#fff' : 'rgba(255,255,255,.85)',
+    boxShadow: primary ? 'inset 0 -3px 0 rgba(0,0,0,.18)' : 'none',
+  });
   return b;
 }
 
-// The card Chess.com announces a result with, assembled from its own parts:
-//
-//   board-modal-component            the panel, its radius and its theme colours
-//     game-over-modal-shell-container
-//       game-over-modal-shell-content
-//         game-over-modal-header-component [ -whiteWon | -blackWon ]
-//           game-over-modal-header-inner > -header
-//         game-over-modal-shell-buttons
-//
-// Every node is tagged data-sfct: it keeps our card out of the rule that hides
-// theirs, and it lets teardown collect the whole thing in one sweep.
-function makeCard(id, title, subtitle, opts) {
+// The dark card Chess.com announces things with: heading, subtitle, then a
+// column of buttons. Both the result and the "who is to move?" question are
+// this shape, so it is built once.
+function makeCard(id, title, subtitle) {
   const old = document.getElementById(id);
-  if (old) { old._sfctCleanup?.(); old.remove(); }
+  if (old) { old._sfctCleanup?.(); old.remove(); } // never orphan its listeners
   ensureAnimStyle();
-  const el = (tag, cls, text) => {
-    const n = document.createElement(tag);
-    n.setAttribute('data-sfct', 'card');
-    if (cls) n.className = cls;
-    if (text) n.textContent = text;
-    return n;
-  };
-
-  const card = el('div', 'board-modal-component');
+  const card = document.createElement('div');
   card.id = id;
-  // Painted from Chess.com's own theme variables, not from colours written
-  // down here. --color-bg-gradient-modal IS their modal surface, so this card
-  // follows whatever theme you are on — the hardcoded #262421 it used before is
-  // literally their --color-bg-opaque, which was right in dark mode by accident
-  // and wrong in light mode. The old values stay as fallbacks for a page that
-  // defines neither.
+  card.setAttribute('data-sfct', 'card');
   Object.assign(card.style, {
-    position: 'fixed', zIndex: '999998', width: 'min(340px,86vw)',
-    overflow: 'hidden', boxSizing: 'border-box', animation: '_sfctpop .18s ease-out',
-    // BOTH: their modal gradient runs from #312E2B to almost transparent,
-    // because it is meant to sit ON a solid surface rather than be one. Set
-    // as `background` alone it made the card see-through.
-    backgroundColor: 'var(--color-bg-opaque, #262421)',
-    backgroundImage: 'var(--color-bg-gradient-modal, none)',
-    color: 'var(--color-text-default, #fff)',
-    borderRadius: 'var(--radius-4, 10px)',
-    boxShadow: '0 12px 40px var(--color-bg-overlay-subtle, rgba(0,0,0,.5))',
-    fontFamily: 'inherit',
+    position: 'fixed', zIndex: '999998', width: 'min(330px,80vw)',
+    background: '#262421', borderRadius: '12px', overflow: 'hidden',
+    boxShadow: '0 12px 40px rgba(0,0,0,.6)', color: '#fff',
+    fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+    animation: '_sfctpop .18s ease-out',
   });
 
-  const header = el('div', 'game-over-modal-header-component' +
-    (opts?.winner ? ` game-over-modal-header-${opts.winner === 'w' ? 'white' : 'black'}Won` : ''));
-  header.style.position = 'relative';
-  const inner = el('div', 'game-over-modal-header-inner');
-  Object.assign(inner.style, { padding: '22px 20px 14px', textAlign: 'center',
-    boxSizing: 'border-box' });
-  const h = el('div', 'game-over-modal-header-header', title);
-  Object.assign(h.style, { fontSize: '26px', fontWeight: '800', lineHeight: '1.15',
-    minWidth: '0', whiteSpace: 'normal', overflowWrap: 'anywhere' });
-  inner.appendChild(h);
-  if (subtitle) {
-    const sub = el('div', null, subtitle);
-    Object.assign(sub.style, { opacity: '.62', fontSize: '14px', marginTop: '2px' });
-    inner.appendChild(sub);
-  }
-  header.append(inner);
+  const head = document.createElement('div');
+  Object.assign(head.style, { background: '#302e2c', padding: '18px 20px', textAlign: 'center' });
+  const h = document.createElement('div');
+  h.textContent = title;
+  Object.assign(h.style, { fontSize: '22px', fontWeight: '700', lineHeight: '1.2' });
+  const sub = document.createElement('div');
+  sub.textContent = subtitle;
+  Object.assign(sub.style, { fontSize: '13px', opacity: '.6', marginTop: '4px' });
+  head.append(h, sub);
 
-  const body = el('div', 'game-over-modal-shell-buttons');
-  Object.assign(body.style, { display: 'flex', flexDirection: 'column', gap: '8px',
-    padding: '0 20px 20px', boxSizing: 'border-box' });
-
-  const content = el('div', 'game-over-modal-shell-content');
-  content.append(header, body);
-  const shell = el('div', 'game-over-modal-shell-container');
-  shell.appendChild(content);
-  card.appendChild(shell);
-  // Their layout classes carry widths meant for their own containers. Ours
-  // is a free-standing card, so every level is pinned to it: nothing can be
-  // wider than the box that clips it.
-  for (const n of [shell, content, header, inner, body]) {
-    Object.assign(n.style, { width: '100%', maxWidth: '100%',
-      boxSizing: 'border-box', minWidth: '0' });
-  }
-  return { card, body, header };
+  const body = document.createElement('div');
+  Object.assign(body.style, { padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: '8px' });
+  card.append(head, body);
+  return { card, body };
 }
 
 // Put a card on screen, centred on the board and staying there.
@@ -1237,7 +1015,8 @@ function askSideToMove(onPick) {
 // `opts.rematch === false` drops the "play again" button: a position that was
 // already over when you picked it would lead straight back to this card.
 function showResultModal(title, subtitle, opts) {
-  const { card, body } = makeCard('sfct-result', title, subtitle || '', opts);
+  const { card, body } = makeCard('sfct-result', title, subtitle || '');
+  card.setAttribute('data-sfct', 'result');
   const replayable = opts?.rematch !== false;
   if (replayable) {
     const again = cardButton('Play again vs Stockfish', true);
@@ -1247,15 +1026,10 @@ function showResultModal(title, subtitle, opts) {
   const back = cardButton('Back to Chess.com', false);
   back.onclick = dismissResult;
   const note = document.createElement('div');
-  note.setAttribute('data-sfct', 'card');
   note.textContent = replayable
     ? 'The final position stays on the board until you leave.'
     : 'Go back, pick an earlier move, then Continue again.';
-  // minWidth:0 and a wrap: a flex child keeps min-width:auto, so this one line
-  // refused to shrink and spilled past a card that clips its overflow.
-  Object.assign(note.style, { fontSize: '12px', opacity: '.5', textAlign: 'center', marginTop: '2px',
-    color: 'var(--color-text-subtle, inherit)', lineHeight: '1.3',
-    minWidth: '0', whiteSpace: 'normal', overflowWrap: 'anywhere' });
+  Object.assign(note.style, { fontSize: '11px', opacity: '.45', textAlign: 'center', marginTop: '2px' });
   body.append(back, note);
   showCard(card);
 }
@@ -1301,16 +1075,36 @@ function startContinuation(board, side, strength, fenFromPage) {
   showChesscomBoard(fen, bridgePlayerColor() || getPlayerColor(), strength);
 }
 
-// The trigger IS a Chess.com button: their classes, their shape, their states,
-// their theme. Copying a neighbour's className and stuffing our own spans into
-// it is what squashed this - their buttons are inline-grid today, and a flex
-// wrapper from an older generation of their markup collapses inside that grid.
-function makeNativeButton() {
-  const btn = cardButton('\u265F Continue vs Computer', false);
-  // NOT data-sfct: that marks the overlay, which teardown sweeps away. The
-  // trigger is not part of a game and is managed by removeTrigger().
-  btn.removeAttribute('data-sfct');
+// Build a button that mimics a Chess.com modal button when given a template.
+function makeNativeButton(template) {
+  const btn = document.createElement('button');
   btn.id = 'sfctplay-btn';
+  if (template?.className) {
+    btn.className = template.className;
+    btn.classList.remove('ui_v5-button-primary', 'cc-button-primary');
+    btn.classList.add('ui_v5-button-secondary', 'cc-button-secondary');
+  }
+  const wrap = document.createElement('span');
+  wrap.className = 'ui_v5-button-content-wrapper';
+  const label = document.createElement('span');
+  label.className = 'ui_v5-button-text';
+  label.textContent = '♟ Continue vs Computer';
+  wrap.appendChild(label);
+  btn.appendChild(wrap);
+  Object.assign(btn.style, {
+    display: 'inline-flex', justifyContent: 'center', alignItems: 'center',
+    minHeight: '48px', cursor: 'pointer', marginTop: '8px',
+  });
+  // No modal means no Chess.com button to borrow the look from, and the label
+  // would land as bare text on the dock. Paint it in their green instead.
+  if (!template?.className) {
+    Object.assign(btn.style, {
+      width: '100%', border: 'none', borderRadius: '8px', background: '#81b64c',
+      color: '#fff', fontSize: '15px', fontWeight: '700',
+      boxShadow: 'inset 0 -3px 0 rgba(0,0,0,.18)',
+      fontFamily: '-apple-system,BlinkMacSystemFont,sans-serif',
+    });
+  }
   btn.onclick = onContinueClick;
   return btn;
 }
@@ -1349,7 +1143,8 @@ function injectButtons() {
   // Line the trigger up under the anchor but keep the node in <body>: Chess.com
   // renders both surfaces with Vue, and inserting into them made Vue throw
   // "insertBefore … not a child of this node" on its next patch.
-  const btn = makeNativeButton();
+  const btn = makeNativeButton(modal ? modalButtonAnchor(modal) : null);
+  btn.style.width = '100%';
 
   // A strip that continues the surface above it: same width, same background,
   // rounded off at the bottom, sitting flush against it, so the two read as one
@@ -1378,31 +1173,33 @@ function extensionAlive() {
   try { return !!chrome.runtime?.id; } catch (_) { return false; }
 }
 
-// Align a docked strip to whatever it was anchored to — Chess.com's result card
-// or the move-list column — at that anchor's exact width, so the two read as one
-// panel through scrolls and resizes.
+// Keep the dock aligned to whatever it was anchored to — the result card or the
+// move-list column — at that anchor's exact width, so the two keep reading as
+// one panel through scrolls and resizes.
 //
 // The two anchors need opposite treatment. A result card is a floating box with
-// empty page under it, so the strip hangs BELOW it. The move-list column runs
-// the full height of the window, so there is no "below": the strip sits at the
-// bottom of the column as seen, inside its own width, and the column is asked to
-// be that much shorter so nothing is covered.
-function alignDock(dock) {
+// empty page under it, so the dock hangs BELOW it. The move-list column runs the
+// full height of the window, so there is no "below" to hang in: the dock sits at
+// the bottom of the column as seen, inside the column's own width, reading as
+// its last row. Handing over to a floating button when the column ran past the
+// fold meant handing over every single time, since it always does.
+function alignTrigger() {
+  const dock = document.getElementById('sfctplay-dock');
   if (!dock) return;
-  const panel = dock.dataset.anchor === 'panel';
-  const anchor = panel ? sidebarPanel() : findGameOverModal();
-  if (!anchor) { if (!panel) removeTrigger(); return; }
+  const anchor = dock.dataset.anchor === 'panel' ? sidebarPanel() : findGameOverModal();
+  if (!anchor) { removeTrigger(); return; }
   const r = anchor.getBoundingClientRect();
   if (!r.width) return;
   dock.style.left = r.left + 'px';
   dock.style.width = r.width + 'px';
-  if (!panel) { dock.style.top = (r.bottom - 1) + 'px'; return; }
+  if (dock.dataset.anchor !== 'panel') { dock.style.top = (r.bottom - 1) + 'px'; return; }
   const h = dock.getBoundingClientRect().height || 64;
+  // Ask the column to be that much shorter, so the bar lands in free space
+  // instead of over the icons at its foot. Falls back to covering them if the
+  // column will not shrink.
   reserveColumnFoot(anchor, h);
   dock.style.top = Math.max(0, Math.min(r.bottom, window.innerHeight) - h) + 'px';
 }
-
-function alignTrigger() { alignDock(document.getElementById('sfctplay-dock')); }
 
 // The modal container itself is often transparent — walk up until something
 // actually paints, so the dock matches the card instead of flashing white.

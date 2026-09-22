@@ -10,39 +10,16 @@
 // and a hundred more — everything the content script currently rebuilds by
 // scraping piece divs and parsing the URL.
 //
-// It publishes what it reads over window.postMessage, and answers a small set of
-// commands from the isolated world.
-//
-// FAIR PLAY. Anything that changes the board is refused here unless Chess.com's
-// own game reports a result — which is "*" for as long as one is being played.
-// The content script has already reached the same conclusion from the page's
-// DOM before it asks. Two independent checks, in two different worlds, on two
-// different sources, and neither can stand in for the other: a stale game-over
-// node cannot fool the game object, and a misread result cannot get past the
-// DOM. Nothing that ends or alters a real game is reachable from here at all —
-// no setMode, no resign, no agreeDraw — and the page world has no access to
-// chrome.*, so this holds no permissions of its own.
+// This file is READ-ONLY by construction. It calls nothing that changes a game:
+// no move(), no setMode(), no resign(), no agreeDraw(). It publishes what it
+// read over window.postMessage and stops there. It cannot do more even by
+// accident — the page world has no access to chrome.*, so it holds no
+// permissions of its own.
 (() => {
   const CHANNEL = 'sfct-page-state';
   const POLL_MS = 400;
 
-  // The LARGEST VISIBLE board, the same rule the content script uses to pick the
-  // one it plays on. querySelector takes the first in the document, and a page
-  // carrying more than one — a review page does — then has the two of us reading
-  // and drawing on different boards.
-  function board() {
-    const all = [...document.querySelectorAll('wc-chess-board, chess-board')]
-      .filter(b => document.body.contains(b));
-    let best = null, bestW = 0;
-    for (const b of all) {
-      const r = b.getBoundingClientRect();
-      if (r.width > bestW) { best = b; bestW = r.width; }
-    }
-    // A width of zero everywhere means nothing has been laid out yet — or there
-    // is no layout engine at all, which is how the tests run. Take the first
-    // rather than deciding there is no board.
-    return bestW > 0 ? best : (all[0] || null);
-  }
+  const board = () => document.querySelector('wc-chess-board, chess-board');
 
   // Every read is wrapped: this is an undocumented surface, and a getter that
   // throws must cost us one field, never the whole snapshot.
@@ -81,69 +58,4 @@
 
   publish();
   setInterval(publish, POLL_MS);
-
-  // ── Commands ───────────────────────────────────────────────────────────────
-  // Only these four. `legal` reads; the other three change the board and are
-  // gated on the game having a result.
-  const CHANGES = new Set(['continuation', 'move', 'reset', 'backward']);
-
-  function hasResult(game) {
-    try {
-      const r = game.getResult();
-      return typeof r === 'string' && r !== '' && r !== '*';
-    } catch (_) { return false; }
-  }
-
-  const OPS = {
-    // Branch off the position being shown. Our moves then land in a variation
-    // beside the real game, which resetToMainLine() discards untouched.
-    continuation: (g) => { const r = g.createContinuation(); try { g.selectLineEnd(); } catch (_) {} return r; },
-    // move() adds the move to the line. It does NOT promise the board is
-    // SHOWING the end of that line — and when the view is parked on an earlier
-    // ply, which is exactly where a continuation starts from, the move lands
-    // somewhere you are not looking. The pieces move and you never see them.
-    // selectLineEnd() brings the view to the move just played.
-    // move() adds the move to the line; it does not promise the board is SHOWING
-    // it. With the view parked on an earlier ply — where a continuation starts —
-    // the move lands somewhere nobody is looking.
-    //
-    // moveForward() first, because it is the step their board ANIMATES;
-    // selectLineEnd() jumps, which is what made the pieces snap from square to
-    // square instead of sliding. Each is tried only if the position has not
-    // already followed.
-    move: (g, a) => {
-      const at = () => { try { return g.getFEN(); } catch (_) { return null; } };
-      const before = at();
-      const r = g.move(a);
-      if (at() === before) { try { g.moveForward(); } catch (_) {} }
-      if (at() === before) { try { g.selectLineEnd(); } catch (_) {} }
-      return r;
-    },
-    reset: (g) => g.resetToMainLine(),
-    // Walk the move list back, so a rematch can return to the position the
-    // continuation began from instead of branching at the end of the game.
-    backward: (g, a) => { const n = Math.min(400, Math.max(0, (a && a.n) | 0));
-      for (let i = 0; i < n; i++) g.moveBackward(); },
-    legal: (g, a) => (a && a.square ? g.getLegalMovesForSquare(a.square) : g.getLegalMoves()),
-  };
-
-  window.addEventListener('message', (e) => {
-    if (e.source !== window) return;
-    const d = e.data;
-    if (!d || d.__sfct !== 'cmd' || !OPS[d.op]) return;
-    const reply = (ok, value) => window.postMessage(
-      { __sfct: 'cmd-reply', id: d.id, ok, value }, window.location.origin);
-    const el = board();
-    const game = el && el.game;
-    if (!game) return reply(false, 'nessuna partita');
-    if (CHANGES.has(d.op) && !hasResult(game)) return reply(false, 'partita in corso');
-    try {
-      const value = OPS[d.op](game, d.args);
-      // Returns are large and self-referential; the caller only needs to know it
-      // worked and where the board ended up.
-      reply(true, d.op === 'legal' ? (Array.isArray(value) ? value : null) : read(game, 'getFEN') || null);
-    } catch (err) {
-      reply(false, String(err).slice(0, 140));
-    }
-  });
 })();
