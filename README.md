@@ -2,13 +2,32 @@
 
 **Browser extension for Chess.com - when a game ends, keep playing the final position vs Stockfish on the same board. One click.**
 
-[![Chrome](https://img.shields.io/badge/Chrome-MV3-4285F4?logo=googlechrome&logoColor=white)](#installation)
+[![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-Install-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/stockfish-continue-to-pla/jhjcnpomgjakflfjjhlgilgpffmfbcbk)
 [![Firefox](https://img.shields.io/badge/Firefox-MV3-FF7139?logo=firefoxbrowser&logoColor=white)](#firefox)
 [![License](https://img.shields.io/badge/License-GPLv3-blue)](LICENSE)
 
 ![The extension taking over a finished Chess.com game and playing it out against Stockfish](docs/demo.gif)
 
-<sub>A real game ends, "Continue vs Computer" appears, and the same board keeps going against Stockfish - no redirect, no new tab. Recorded at 2x.</sub>
+<sub>A real Chess.com game, reopened one move before the end: "Keep Playing" sits under the move list, the same board keeps going against Stockfish, and the mate lands on Chess.com's own result card - no redirect, no new tab. Recorded on chess.com with the released 3.3.0.</sub>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+![Walking back through the move list and continuing from an earlier position](docs/media/any-position.gif)
+
+<sub>**Continue from any move.** Step back through the move list and press the button there: the game restarts from whatever is on the board.</sub>
+
+</td>
+<td width="50%" valign="top">
+
+![Promoting a pawn through Chess.com's own four-piece picker](docs/media/promotion.gif)
+
+<sub>**Promotion, not auto-queen.** The picker is Chess.com's own, so you promote the way you already do on the site.</sub>
+
+</td>
+</tr>
+</table>
 
 ---
 
@@ -52,10 +71,14 @@ in-page, so the game never leaves Chess.com.
 
 ## Installation
 
-The extension is **not yet published** on the Chrome Web Store or Firefox Add-ons, so it is
-installed by hand. The quickest way is the prebuilt zip.
-
 ### Chrome, Edge, Brave, Arc, Opera
+
+**[➜ Install from the Chrome Web Store](https://chromewebstore.google.com/detail/stockfish-continue-to-pla/jhjcnpomgjakflfjjhlgilgpffmfbcbk)**
+
+One click. Works on every Chromium browser, not just Chrome.
+
+<details>
+<summary>Or install the zip by hand</summary>
 
 1. Download `stockfish-continue-to-play-chrome-<version>.zip` from the newest `v…` release
    on the [Releases page](https://github.com/thousandflowers/stockfish-continue-to-play/releases).
@@ -63,8 +86,10 @@ installed by hand. The quickest way is the prebuilt zip.
 3. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick
    the unzipped folder.
 
-That is all. **The release zips already bundle the Stockfish engine**, so there is no
+**The release zips already bundle the Stockfish engine**, so there is no
 download script to run and nothing is fetched at runtime.
+
+</details>
 
 ### Firefox
 
