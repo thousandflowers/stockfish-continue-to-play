@@ -7,3 +7,6 @@ stockfish.wasm
 *.zip
 dist-amo/
 CWS-AUDIT.md
+
+# media build scratch (raw captures live on Desktop)
+.media-build/
